@@ -157,9 +157,12 @@ async def backfill():
         limit = 0
     if not TARGET_CHANNEL or limit <= 0:
         return
-    msgs = await app.get_chat_history(TARGET_CHANNEL, limit=limit)
-    for msg in msgs:
+    count = 0
+    async for msg in app.get_chat_history(TARGET_CHANNEL, limit=limit):
         await process_message(msg)
+        count += 1
+        if count % 50 == 0:
+            logging.info(f"Backfill progress: {count}/{limit} messages processed")
 
 def main_sync():
     start_status_server()
