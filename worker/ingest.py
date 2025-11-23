@@ -2,6 +2,10 @@ import os
 import time
 import logging
 import asyncio
+import json
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 from dotenv import load_dotenv
 from pyrogram import Client, filters
 import boto3
@@ -50,6 +54,42 @@ if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
 else:
     logging.warning("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set; will skip DB upserts")
 
+STATS = {
+    "started_at": datetime.now(timezone.utc).isoformat(),
+    "processed": 0,
+    "last_id": None,
+    "last_time": None,
+    "last_error": None,
+    "connected": False,
+}
+
+class StatusHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health" or self.path == "/status":
+            body = json.dumps({
+                "ok": True,
+                "stats": STATS,
+                "channel": TARGET_CHANNEL,
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def start_status_server():
+    try:
+        port = int(os.getenv("PORT", "8000"))
+    except Exception:
+        port = 8000
+    server = HTTPServer(("0.0.0.0", port), StatusHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logging.info(f"Status server listening on :{port}")
+
 def _media_info(msg):
     if msg.photo:
         p = msg.download()
@@ -80,6 +120,9 @@ async def process_message(msg):
             pass
     content = msg.caption or msg.text
     created = msg.date.isoformat()
+    STATS["processed"] += 1
+    STATS["last_id"] = msg.id
+    STATS["last_time"] = created
     if supabase:
         try:
             supabase.table("posts").upsert({
@@ -94,6 +137,7 @@ async def process_message(msg):
             logging.info(f"Upserted post id={msg.id} type={mt}")
         except Exception as e:
             logging.error(f"Failed to upsert post id={msg.id}: {e}")
+            STATS["last_error"] = str(e)
 
 chat_filter = filters.chat(TARGET_CHANNEL) if TARGET_CHANNEL else filters.channel
 @app.on_message(chat_filter)
@@ -118,6 +162,7 @@ async def runner():
     started = False
     try:
         await app.start()
+        STATS["connected"] = True
         started = True
         if os.getenv("BACKFILL_ON_START") == "1":
             await backfill()
@@ -125,8 +170,10 @@ async def runner():
     finally:
         if started:
             await app.stop()
+        STATS["connected"] = False
 
 if __name__ == "__main__":
+    start_status_server()
     while True:
         try:
             logging.info("Starting Telegram worker...")
