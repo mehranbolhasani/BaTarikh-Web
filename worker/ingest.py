@@ -110,15 +110,21 @@ async def backfill():
         limit = 0
     if not TARGET_CHANNEL or limit <= 0:
         return
-    async for msg in app.iter_history(TARGET_CHANNEL, limit=limit):
+    msgs = await app.get_chat_history(TARGET_CHANNEL, limit=limit)
+    for msg in msgs:
         await process_message(msg)
 
 async def runner():
-    await app.start()
-    if os.getenv("BACKFILL_ON_START") == "1":
-        await backfill()
-    await app.idle()
-    await app.stop()
+    started = False
+    try:
+        await app.start()
+        started = True
+        if os.getenv("BACKFILL_ON_START") == "1":
+            await backfill()
+        await app.idle()
+    finally:
+        if started:
+            await app.stop()
 
 if __name__ == "__main__":
     while True:
