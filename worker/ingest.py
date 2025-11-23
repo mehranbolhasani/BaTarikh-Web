@@ -8,7 +8,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 from dotenv import load_dotenv
 from pyrogram import Client, filters, idle
+from pyrogram.errors import FloodWait
 import boto3
+from botocore.config import Config
+from boto3.s3.transfer import S3Transfer, TransferConfig
 import mimetypes
 from supabase import create_client
 
@@ -46,7 +49,11 @@ r2 = boto3.client(
     endpoint_url=R2_ENDPOINT,
     aws_access_key_id=R2_ACCESS_KEY_ID,
     aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+    config=Config(retries={"max_attempts": 5, "mode": "standard"}),
 )
+
+_transfer_cfg = TransferConfig(multipart_threshold=8 * 1024 * 1024, multipart_chunksize=8 * 1024 * 1024)
+_transfer = S3Transfer(r2, config=_transfer_cfg)
 
 supabase = None
 if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
@@ -93,22 +100,38 @@ def start_status_server():
     t.start()
     logging.info(f"Status server listening on :{port}")
 
+async def _download(msg):
+    while True:
+        try:
+            return await msg.download()
+        except FloodWait as e:
+            await asyncio.sleep(e.value + 1)
+
 async def _media_info(msg):
     if msg.photo:
-        p = await msg.download()
+        p = await _download(msg)
         return p, getattr(msg.photo, "width", None), getattr(msg.photo, "height", None), "image"
     if msg.video:
-        p = await msg.download()
+        p = await _download(msg)
         return p, getattr(msg.video, "width", None), getattr(msg.video, "height", None), "video"
     if msg.audio:
-        p = await msg.download()
+        p = await _download(msg)
         return p, None, None, "audio"
     return None, None, None, "none"
 
 def _upload_to_r2(file_path, object_key):
     ct = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
-    r2.upload_file(file_path, R2_BUCKET, object_key, ExtraArgs={"ContentType": ct})
-    return f"{R2_PUBLIC_BASE_URL}/{object_key}"
+    attempts = 0
+    while True:
+        try:
+            _transfer.upload_file(file_path, R2_BUCKET, object_key, extra_args={"ContentType": ct})
+            return f"{R2_PUBLIC_BASE_URL}/{object_key}"
+        except Exception as e:
+            attempts += 1
+            STATS["last_error"] = str(e)
+            if attempts >= 5:
+                raise e
+            time.sleep(min(2 ** attempts, 10))
 
 async def process_message(msg):
     fp, w, h, mt = await _media_info(msg)
@@ -177,6 +200,12 @@ def main_sync():
                     logging.error(f"Backfill task failed: {e}")
             # Schedule backfill on the same loop to avoid cross-loop errors
             app.loop.create_task(backfill_wrapper())
+        async def heartbeat():
+            interval = int(os.getenv("HEARTBEAT_SECS", "60"))
+            while True:
+                logging.info(f"Heartbeat connected={STATS['connected']} processed={STATS['processed']} last_id={STATS['last_id']}")
+                await asyncio.sleep(interval)
+        app.loop.create_task(heartbeat())
         idle()
     finally:
         app.stop()
