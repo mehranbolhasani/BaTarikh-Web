@@ -65,7 +65,7 @@ STATS = {
 
 class StatusHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/health" or self.path == "/status":
+        if self.path in ("/", "/health", "/status"):
             body = json.dumps({
                 "ok": True,
                 "stats": STATS,
@@ -76,6 +76,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif self.path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -164,7 +167,8 @@ def main_sync():
     STATS["connected"] = True
     try:
         if os.getenv("BACKFILL_ON_START") == "1":
-            app.loop.run_until_complete(backfill())
+            # Schedule backfill on the same loop to avoid cross-loop errors
+            app.loop.create_task(backfill())
         idle()
     finally:
         app.stop()
