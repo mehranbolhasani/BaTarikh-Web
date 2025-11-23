@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import asyncio
 from dotenv import load_dotenv
 from pyrogram import Client, filters
 import boto3
@@ -20,7 +21,7 @@ R2_BUCKET = os.getenv("R2_BUCKET")
 R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_PUBLIC_BASE_URL = os.getenv("R2_PUBLIC_BASE_URL")
-TARGET_CHANNEL = os.getenv("TARGET_CHANNEL")
+TARGET_CHANNEL = os.getenv("TARGET_CHANNEL", "batarikh")
 
 missing = []
 for k in ["API_ID", "API_HASH", "SESSION_STRING", "R2_ENDPOINT", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_PUBLIC_BASE_URL"]:
@@ -102,15 +103,29 @@ async def handle_message(client, message):
     except Exception as e:
         logging.error(f"Error processing message id={getattr(message, 'id', '?')}: {e}")
 
+async def backfill():
+    try:
+        limit = int(os.getenv("BACKFILL_LIMIT", "0"))
+    except Exception:
+        limit = 0
+    if not TARGET_CHANNEL or limit <= 0:
+        return
+    async for msg in app.iter_history(TARGET_CHANNEL, limit=limit):
+        await process_message(msg)
+
+async def runner():
+    await app.start()
+    if os.getenv("BACKFILL_ON_START") == "1":
+        await backfill()
+    await app.idle()
+    await app.stop()
+
 if __name__ == "__main__":
     while True:
         try:
             logging.info("Starting Telegram worker...")
-            app.run()
+            asyncio.run(runner())
         except Exception as e:
             logging.error(f"Worker crashed: {e}")
             time.sleep(5)
             logging.info("Restarting worker...")
-
-if __name__ == "__main__":
-    app.run()
