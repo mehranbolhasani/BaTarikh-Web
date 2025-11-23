@@ -158,18 +158,16 @@ async def backfill():
     for msg in msgs:
         await process_message(msg)
 
-async def runner():
-    started = False
+def main_sync():
+    start_status_server()
+    app.start()
+    STATS["connected"] = True
     try:
-        await app.start()
-        STATS["connected"] = True
-        started = True
         if os.getenv("BACKFILL_ON_START") == "1":
-            await backfill()
-        await app.idle()
+            app.loop.run_until_complete(backfill())
+        idle()
     finally:
-        if started:
-            await app.stop()
+        app.stop()
         STATS["connected"] = False
 
 async def main():
@@ -187,6 +185,6 @@ async def main():
 if __name__ == "__main__":
     logging.info("Starting Telegram worker...")
     try:
-        asyncio.run(main())
+        main_sync()
     except Exception as e:
         logging.error(f"Worker crashed: {e}")
