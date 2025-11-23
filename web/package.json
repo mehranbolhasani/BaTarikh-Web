@@ -9,14 +9,19 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tabs": "^1.1.13",
     "@supabase/supabase-js": "^2.84.0",
+    "@vidstack/react": "^0.6.15",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.554.0",
+    "media-icons": "^0.10.0",
     "next": "16.0.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "vidstack": "^0.6.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

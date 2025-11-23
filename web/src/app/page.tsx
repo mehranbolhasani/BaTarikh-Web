@@ -1,37 +1,84 @@
 import { supabase } from "@/lib/supabase";
 import { Post } from "@/types/post";
+import { MediaCard } from "@/components/media-card";
+import Link from "next/link";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 
-export default async function Home() {
-  const { data } = await supabase
+export default async function Home({ searchParams }: { searchParams?: Promise<{ type?: string; page?: string }> }) {
+  const resolved = searchParams ? await searchParams : undefined;
+  const type = resolved?.type;
+  const page = Math.max(1, Number(resolved?.page ?? 1) || 1);
+  const perPage = 30;
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+  let query = supabase
     .from("posts")
-    .select("*")
+    .select("*", { count: "exact" })
     .order("created_at", { ascending: false })
-    .limit(50);
+    .range(from, to);
+  if (type && ["image","video","audio","none"].includes(type)) {
+    query = query.eq("media_type", type);
+  }
+  const { data } = await query;
 
   const posts = (data || []) as Post[];
 
+  const active = type ?? "all";
+  const hasPrev = page > 1;
+  const hasNext = (posts.length === perPage); // heuristic without count
+
   return (
-    <main className="mx-auto max-w-6xl p-6">
-      <h1 className="text-2xl font-semibold mb-6">Telegram Archive</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <main className="mx-auto max-w-7xl p-6">
+      <div className="mb-6">
+        <h1 className="text-3xl font-semibold">بـاتاریخ</h1>
+        <p className="text-sm text-muted-foreground">آرشیو کانال تلگرام batarikh</p>
+      </div>
+      <Tabs defaultValue={active} className="mb-4">
+        <TabsList>
+          <TabsTrigger value="all" asChild>
+            <Link href={`/?${new URLSearchParams({ page: "1" }).toString()}`}>همه</Link>
+          </TabsTrigger>
+          <TabsTrigger value="image" asChild>
+            <Link href={`/?${new URLSearchParams({ type: "image", page: "1" }).toString()}`}>تصویر</Link>
+          </TabsTrigger>
+          <TabsTrigger value="video" asChild>
+            <Link href={`/?${new URLSearchParams({ type: "video", page: "1" }).toString()}`}>ویدئو</Link>
+          </TabsTrigger>
+          <TabsTrigger value="audio" asChild>
+            <Link href={`/?${new URLSearchParams({ type: "audio", page: "1" }).toString()}`}>صوتی</Link>
+          </TabsTrigger>
+          <TabsTrigger value="none" asChild>
+            <Link href={`/?${new URLSearchParams({ type: "none", page: "1" }).toString()}`}>متنی</Link>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <div className="columns-1 sm:columns-2 lg:columns-3 gap-4">
         {posts.map((p) => (
-          <div key={p.id} className="rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-            {p.media_type === "image" && p.media_url && (
-              <img src={p.media_url} alt="" className="w-full object-cover" />
-            )}
-            {p.media_type === "video" && p.media_url && (
-              <video src={p.media_url} controls className="w-full" />
-            )}
-            {p.media_type === "audio" && p.media_url && (
-              <audio src={p.media_url} controls className="w-full" />
-            )}
-            <div className="p-3">
-              {p.content && <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{p.content}</p>}
-              <p className="mt-2 text-xs text-zinc-500">{new Date(p.created_at).toLocaleString()}</p>
-            </div>
-          </div>
+          <MediaCard key={p.id} post={p} />
         ))}
-        {posts.length === 0 && <p className="text-zinc-600">No posts yet.</p>}
+        {posts.length === 0 && <p className="text-zinc-600">هنوز پستی وجود ندارد.</p>}
+      </div>
+      <div className="mt-6 flex items-center justify-between">
+        <Button
+          asChild
+          variant="outline"
+          className={!hasPrev ? "pointer-events-none opacity-50" : undefined}
+        >
+          <Link href={`/?${new URLSearchParams({ ...(type ? { type } : {}), page: String(Math.max(1, page - 1)) }).toString()}`}>
+            قبلی
+          </Link>
+        </Button>
+        <span className="text-sm text-muted-foreground">صفحه {page}</span>
+        <Button
+          asChild
+          variant="outline"
+          className={!hasNext ? "pointer-events-none opacity-50" : undefined}
+        >
+          <Link href={`/?${new URLSearchParams({ ...(type ? { type } : {}), page: String(page + 1) }).toString()}`}>
+            بعدی
+          </Link>
+        </Button>
       </div>
     </main>
   );
