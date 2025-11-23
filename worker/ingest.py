@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 from dotenv import load_dotenv
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 import boto3
 import mimetypes
 from supabase import create_client
@@ -172,13 +172,21 @@ async def runner():
             await app.stop()
         STATS["connected"] = False
 
-if __name__ == "__main__":
+async def main():
     start_status_server()
-    while True:
-        try:
-            logging.info("Starting Telegram worker...")
-            asyncio.run(runner())
-        except Exception as e:
-            logging.error(f"Worker crashed: {e}")
-            time.sleep(5)
-            logging.info("Restarting worker...")
+    await app.start()
+    STATS["connected"] = True
+    try:
+        if os.getenv("BACKFILL_ON_START") == "1":
+            await backfill()
+        await idle()
+    finally:
+        await app.stop()
+        STATS["connected"] = False
+
+if __name__ == "__main__":
+    logging.info("Starting Telegram worker...")
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logging.error(f"Worker crashed: {e}")
