@@ -93,15 +93,15 @@ def start_status_server():
     t.start()
     logging.info(f"Status server listening on :{port}")
 
-def _media_info(msg):
+async def _media_info(msg):
     if msg.photo:
-        p = msg.download()
-        return p, msg.photo.width, msg.photo.height, "image"
+        p = await msg.download()
+        return p, getattr(msg.photo, "width", None), getattr(msg.photo, "height", None), "image"
     if msg.video:
-        p = msg.download()
-        return p, msg.video.width, msg.video.height, "video"
+        p = await msg.download()
+        return p, getattr(msg.video, "width", None), getattr(msg.video, "height", None), "video"
     if msg.audio:
-        p = msg.download()
+        p = await msg.download()
         return p, None, None, "audio"
     return None, None, None, "none"
 
@@ -111,10 +111,10 @@ def _upload_to_r2(file_path, object_key):
     return f"{R2_PUBLIC_BASE_URL}/{object_key}"
 
 async def process_message(msg):
-    fp, w, h, mt = _media_info(msg)
+    fp, w, h, mt = await _media_info(msg)
     mu = None
     if fp:
-        ext = os.path.splitext(fp)[1]
+        ext = os.path.splitext(fp)[1] if isinstance(fp, str) else ""
         key = f"{msg.chat.id}/{msg.id}{ext}"
         mu = _upload_to_r2(fp, key)
         try:
@@ -170,8 +170,13 @@ def main_sync():
     STATS["connected"] = True
     try:
         if os.getenv("BACKFILL_ON_START") == "1":
+            async def backfill_wrapper():
+                try:
+                    await backfill()
+                except Exception as e:
+                    logging.error(f"Backfill task failed: {e}")
             # Schedule backfill on the same loop to avoid cross-loop errors
-            app.loop.create_task(backfill())
+            app.loop.create_task(backfill_wrapper())
         idle()
     finally:
         app.stop()
