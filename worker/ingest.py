@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 from dotenv import load_dotenv
+import re
 try:
     from PIL import Image
     HAS_PIL = True
@@ -179,6 +180,11 @@ async def process_message(msg):
             except Exception:
                 pass
     content = msg.caption or msg.text
+    if content:
+        try:
+            content = re.sub(r"\s*@batarikh\s*$", "", content.strip(), flags=re.IGNORECASE)
+        except Exception:
+            pass
     created = msg.date.isoformat()
     STATS["processed"] += 1
     STATS["last_id"] = msg.id

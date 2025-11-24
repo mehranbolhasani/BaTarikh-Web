@@ -42,6 +42,15 @@ function formatDate(dateStr: string) {
   }
 }
 
+function sanitizeContent(s?: string | null) {
+  if (!s) return s
+  try {
+    return s.replace(/\s*@batarikh\s*$/i, '')
+  } catch {
+    return s
+  }
+}
+
 export function MediaCard({ post }: { post: Post }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [inView, setInView] = useState(false)
@@ -105,17 +114,26 @@ export function MediaCard({ post }: { post: Post }) {
           </Button>
         </div>
       )}
-      <CardHeader className="border-b">
+      <CardContent>
+        {post.content && (
+          <p className="text-sm whitespace-pre-wrap leading-6">{sanitizeContent(post.content)}</p>
+        )}
+      </CardContent>
+      <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <Badge variant="secondary">{post.media_type}</Badge>
         </CardTitle>
-        <CardDescription suppressHydrationWarning>{formatDate(post.created_at)}</CardDescription>
+        <CardDescription suppressHydrationWarning>
+          <a
+            href={`https://t.me/${process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL || 'batarikh'}/${post.id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            {formatDate(post.created_at)}
+          </a>
+        </CardDescription>
       </CardHeader>
-      <CardContent>
-        {post.content && (
-          <p className="text-sm whitespace-pre-wrap leading-6">{post.content}</p>
-        )}
-      </CardContent>
     </Card>
   )
 }
