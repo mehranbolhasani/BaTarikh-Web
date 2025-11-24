@@ -21,6 +21,9 @@ from boto3.s3.transfer import S3Transfer, TransferConfig
 import mimetypes
 from supabase import create_client
 
+mimetypes.add_type('image/avif', '.avif')
+mimetypes.add_type('image/webp', '.webp')
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(message)s')
 
@@ -155,10 +158,6 @@ async def process_message(msg):
         ext = os.path.splitext(fp)[1] if isinstance(fp, str) else ""
         key = f"{msg.chat.id}/{msg.id}{ext}"
         mu = _upload_to_r2(fp, key)
-        try:
-            os.remove(fp)
-        except Exception:
-            pass
         if mt == "image" and HAS_PIL and isinstance(fp, str):
             try:
                 with Image.open(fp) as im:
@@ -175,10 +174,58 @@ async def process_message(msg):
                                 os.remove(out_path)
                             except Exception:
                                 pass
+                            try:
+                                webp_path = f"{fp}.resized-{s}.webp"
+                                im_copy.save(webp_path, format="WEBP", quality=80)
+                                vkey_webp = f"{msg.chat.id}/{msg.id}-w{s}.webp"
+                                _upload_to_r2(webp_path, vkey_webp)
+                                try:
+                                    os.remove(webp_path)
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+                            try:
+                                avif_path = f"{fp}.resized-{s}.avif"
+                                im_copy.save(avif_path, format="AVIF")
+                                vkey_avif = f"{msg.chat.id}/{msg.id}-w{s}.avif"
+                                _upload_to_r2(avif_path, vkey_avif)
+                                try:
+                                    os.remove(avif_path)
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
                         except Exception:
                             pass
+                    try:
+                        webp_path = f"{fp}.webp"
+                        im.save(webp_path, format="WEBP", quality=80)
+                        o_webp_key = f"{msg.chat.id}/{msg.id}.webp"
+                        _upload_to_r2(webp_path, o_webp_key)
+                        try:
+                            os.remove(webp_path)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    try:
+                        avif_path = f"{fp}.avif"
+                        im.save(avif_path, format="AVIF")
+                        o_avif_key = f"{msg.chat.id}/{msg.id}.avif"
+                        _upload_to_r2(avif_path, o_avif_key)
+                        try:
+                            os.remove(avif_path)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
             except Exception:
                 pass
+        try:
+            os.remove(fp)
+        except Exception:
+            pass
     content = msg.caption or msg.text
     if content:
         try:

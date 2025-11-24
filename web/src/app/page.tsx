@@ -5,13 +5,30 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn, buildHref } from "@/lib/utils";
 import { ArrowRight, ArrowLeft } from "lucide-react";
+import type { Metadata } from "next";
+import Script from "next/script";
 
 export const revalidate = 30;
 
-export default async function Home({ searchParams }: { searchParams?: Promise<{ type?: string; page?: string }> }) {
-  const resolved = searchParams ? await searchParams : undefined;
-  const type = resolved?.type;
-  const page = Math.max(1, Number(resolved?.page ?? 1) || 1);
+export async function generateMetadata({ searchParams }: { searchParams?: { type?: string; page?: string } }): Promise<Metadata> {
+  const type = searchParams?.type
+  const page = Math.max(1, Number(searchParams?.page ?? 1) || 1)
+  const site = process.env.NEXT_PUBLIC_SITE_URL || "https://batarikh.xyz"
+  const labels: Record<string, string> = { image: "تصویر", video: "ویدئو", audio: "صوت", document: "سند", none: "متن" }
+  const titleBase = type && labels[type] ? labels[type] : "همه"
+  const title = page > 1 ? `${titleBase} – صفحه ${new Intl.NumberFormat('fa-IR').format(page)}` : titleBase
+  const href = buildHref({ type, page: String(page) })
+  const canonical = `${site}${href === "/" ? "" : href}`
+  return {
+    title,
+    alternates: { canonical },
+    robots: { index: true, follow: true },
+  }
+}
+
+export default async function Home({ searchParams }: { searchParams?: { type?: string; page?: string } }) {
+  const type = searchParams?.type;
+  const page = Math.max(1, Number(searchParams?.page ?? 1) || 1);
   const perPage = 18;
   const from = (page - 1) * perPage;
   const to = from + perPage - 1;
@@ -59,8 +76,37 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
   const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n);
 
   return (
-    <main className="p-0 md:pr-4 col-span-1">
-      <div className="flex md:inline-flexh-12 items-center rounded-lg bg-card p-[5px] mb-4 shadow-sm">
+    <main className="p-0 md:pr-4 col-span-1 md:col-span-2">
+      <Script id="posts-jsonld" type="application/ld+json">
+        {(() => {
+          const channel = process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL || 'batarikh'
+          const items = posts.map((p, i) => ({
+            '@type': 'ListItem',
+            position: i + 1,
+            url: `https://t.me/${channel}/${p.id}`,
+          }))
+          const sanitize = (s: unknown) => typeof s === 'string' ? s.replace(/\s*@batarikh\s*$/i, '').trim() : ''
+          const graph = posts.map((p) => {
+            const url = `https://t.me/${channel}/${p.id}`
+            const content = sanitize(p.content)
+            if (p.media_type === 'image' && p.media_url) {
+              return { '@type': 'ImageObject', contentUrl: p.media_url, url, width: p.width || undefined, height: p.height || undefined, datePublished: p.created_at, name: content || undefined }
+            }
+            if (p.media_type === 'video' && p.media_url) {
+              return { '@type': 'VideoObject', contentUrl: p.media_url, url, datePublished: p.created_at, name: content || undefined }
+            }
+            if (p.media_type === 'audio' && p.media_url) {
+              return { '@type': 'AudioObject', contentUrl: p.media_url, url, datePublished: p.created_at, name: content || undefined }
+            }
+            if (p.media_type === 'document' && p.media_url) {
+              return { '@type': 'CreativeWork', url, datePublished: p.created_at, name: content || undefined }
+            }
+            return { '@type': 'Article', url, datePublished: p.created_at, headline: content || undefined }
+          })
+          return JSON.stringify({ '@context': 'https://schema.org', '@type': 'ItemList', itemListElement: items, '@graph': graph })
+        })()}
+      </Script>
+      <div className="flex md:inline-flex h-12 items-center rounded-lg bg-card p-[5px] mb-4 shadow-sm">
         <Link
           href={buildHref({ page: "1" })}
           className={cn("px-2 py-1 rounded-md flex-1 text-center", active === "all" ? "bg-primary text-primary-foreground" : undefined)}
@@ -104,7 +150,7 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
         ))}
         {posts.length === 0 && <p className="text-zinc-600">هنوز پستی وجود ندارد.</p>}
       </div>
-      <div className="mt-16 flex items-center justify-center w-fit mx-auto gap-4">
+      <div className="mt-16 flex items-center justify-center w-fit mx-auto gap-1 md:gap-4">
         <Button
           asChild
           variant="outline"

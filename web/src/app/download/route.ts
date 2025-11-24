@@ -20,5 +20,9 @@ export async function GET(req: NextRequest) {
   const headers = new Headers()
   headers.set("Content-Type", "application/pdf")
   headers.set("Content-Disposition", `attachment; filename="${filename}"`)
+  headers.set("Cache-Control", "public, max-age=86400")
+  headers.set("X-Content-Type-Options", "nosniff")
+  const len = upstream.headers.get("content-length")
+  if (len) headers.set("Content-Length", len)
   return new Response(upstream.body, { status: 200, headers })
 }

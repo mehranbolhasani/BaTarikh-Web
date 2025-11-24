@@ -7,26 +7,10 @@ import { Badge } from '@/components/ui/badge'
 import type { Post, MediaType } from '@/types/post'
 import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState, type ComponentType } from 'react'
-import 'vidstack/styles/base.css'
-import 'vidstack/styles/defaults.css'
-import 'vidstack/styles/community-skin/audio.css'
-import 'vidstack/styles/community-skin/video.css'
 import { FileDown, Video, AudioLines, FileText, Image as ImageIcon, AlignRight } from 'lucide-react'
 
-type MediaPlayerProps = { src: string; title?: string; className?: string; children?: React.ReactNode }
-type EmptyProps = Record<string, never>
-const MediaPlayer = dynamic<MediaPlayerProps>(
-  () => import('@vidstack/react').then(m => m.MediaPlayer as unknown as ComponentType<MediaPlayerProps>),
-  { ssr: false }
-)
-const MediaOutlet = dynamic<EmptyProps>(
-  () => import('@vidstack/react').then(m => m.MediaOutlet as unknown as ComponentType<EmptyProps>),
-  { ssr: false }
-)
-const MediaCommunitySkin = dynamic<EmptyProps>(
-  () => import('@vidstack/react').then(m => m.MediaCommunitySkin as unknown as ComponentType<EmptyProps>),
-  { ssr: false }
-)
+const VideoPlayer = dynamic(() => import('@/components/video-player').then(m => m.VideoPlayer), { ssr: false })
+const AudioPlayer = dynamic(() => import('@/components/audio-player').then(m => m.AudioPlayer), { ssr: false })
 
 function formatDate(dateStr: string) {
   try {
@@ -114,7 +98,7 @@ export function MediaCard({ post }: { post: Post }) {
         <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : '4/3' }} className="w-full">
           <Image
             src={post.media_url}
-            alt=""
+            alt={(sanitizeContent(post.content) || `تصویر - ${formatDate(post.created_at)}`) as string}
             width={post.width ?? 800}
             height={post.height ?? 600}
             sizes="(min-width:1024px) 33vw, (min-width:640px) 50vw, 100vw"
@@ -125,18 +109,12 @@ export function MediaCard({ post }: { post: Post }) {
       {post.media_type === 'video' && post.media_url && (
         <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : '16/9' }} className="w-full">
           {inView && (
-            <MediaPlayer src={post.media_url} title="Video" className="w-full h-full">
-              <MediaOutlet />
-              <MediaCommunitySkin />
-            </MediaPlayer>
+            <VideoPlayer src={post.media_url} title="Video" className="w-full h-full" />
           )}
         </div>
       )}
       {post.media_type === 'audio' && post.media_url && inView && (
-        <MediaPlayer src={post.media_url} title="Audio" className="w-full">
-          <MediaOutlet />
-          <MediaCommunitySkin />
-        </MediaPlayer>
+        <AudioPlayer src={post.media_url} title="Audio" className="w-full" />
       )}
       <CardContent>
         {post.content && (
@@ -144,7 +122,7 @@ export function MediaCard({ post }: { post: Post }) {
         )}
       </CardContent>
       <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
+        <h3 className="text-base flex items-center gap-2">
           <Badge variant="outline" className="text-md font-light px-0 rounded-none text-neutral-600! border-none!">
             {post.media_type === 'none' && <AlignRight className="ml-0" />}
             {post.media_type === 'video' && <Video className="ml-0" />}
@@ -153,7 +131,7 @@ export function MediaCard({ post }: { post: Post }) {
             {post.media_type === 'document' && <FileText className="ml-0" />}
             {labelForType(post.media_type)}
           </Badge>
-        </CardTitle>
+        </h3>
         <CardDescription suppressHydrationWarning>
           <a
             href={`https://t.me/${process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL || 'batarikh'}/${post.id}`}

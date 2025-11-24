@@ -36,8 +36,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "با تاریخ",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://batarikh.xyz"),
+  title: { default: "با تاریخ", template: "%s | با تاریخ" },
   description: "نه بودن‌ِمان نه رفتن‌ِمان فرقی به حال دنیا نمی‌کند.",
+  applicationName: "با تاریخ",
+  alternates: { canonical: "/" },
+  robots: { index: true, follow: true },
+  openGraph: {
+    title: "با تاریخ",
+    description: "نه بودن‌ِمان نه رفتن‌ِمان فرقی به حال دنیا نمی‌کند.",
+    siteName: "با تاریخ",
+    locale: "fa_IR",
+    type: "website",
+    url: "/",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "با تاریخ",
+    description: "نه بودن‌ِمان نه رفتن‌ِمان فرقی به حال دنیا نمی‌کند.",
+  },
+};
+
+export const viewport = {
+  themeColor: "#f5f5f5",
 };
 
 export default function RootLayout({
@@ -63,7 +84,7 @@ export default function RootLayout({
           />
             {/* Your Content/Components */}
         </div>
-        <div className="w-full max-w-6xl mx-auto py-4 md:py-20 px-4 md:px-0grid grid-col-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="w-full max-w-6xl mx-auto py-4 md:py-20 px-4 md:px-0 grid grid-col-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Header />
         {children}
         <Footer />
