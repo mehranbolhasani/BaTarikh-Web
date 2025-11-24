@@ -36,8 +36,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BaTarikh – Telegram Archive",
-  description: "Mirror of the batarikh Telegram channel",
+  title: "با تاریخ",
+  description: "نه بودن‌ِمان نه رفتن‌ِمان فرقی به حال دنیا نمی‌کند.",
 };
 
 export default function RootLayout({
