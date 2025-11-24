@@ -122,6 +122,15 @@ async def _media_info(msg):
     if msg.audio:
         p = await _download(msg)
         return p, None, None, "audio"
+    if getattr(msg, 'document', None):
+        # Detect PDFs specifically; otherwise mark as document
+        mime = getattr(msg.document, 'mime_type', None)
+        if (mime and mime.lower() == 'application/pdf') or (getattr(msg.document, 'file_name', '') or '').lower().endswith('.pdf'):
+            p = await _download(msg)
+            return p, None, None, "document"
+        # Optional: handle other documents similarly
+        # p = await _download(msg)
+        # return p, None, None, "document"
     return None, None, None, "none"
 
 def _upload_to_r2(file_path, object_key):

@@ -7,10 +7,11 @@ import { cn, buildHref } from "@/lib/utils";
 
 export const revalidate = 30;
 
-export default async function Home({ searchParams }: { searchParams?: { type?: string; after?: string; before?: string } }) {
-  const type = searchParams?.type;
-  const after = searchParams?.after;
-  const before = searchParams?.before;
+export default async function Home({ searchParams }: { searchParams?: Promise<{ type?: string; after?: string; before?: string }> }) {
+  const resolved = searchParams ? await searchParams : undefined;
+  const type = resolved?.type;
+  const after = resolved?.after;
+  const before = resolved?.before;
   const perPage = 18;
   
   let query = supabase
@@ -18,7 +19,7 @@ export default async function Home({ searchParams }: { searchParams?: { type?: s
     .select("id,created_at,content,media_type,media_url,width,height", { count: "exact" })
     .order("created_at", { ascending: false })
     .limit(perPage);
-  if (type && ["image","video","audio","none"].includes(type)) {
+  if (type && ["image","video","audio","document","none"].includes(type)) {
     query = query.eq("media_type", type);
   }
   if (after) {
@@ -70,8 +71,14 @@ export default async function Home({ searchParams }: { searchParams?: { type?: s
         >
           متنی
         </Link>
+        <Link
+          href={buildHref({ type: "document" })}
+          className={cn("px-2 py-1 rounded-md", active === "document" ? "bg-background" : undefined)}
+        >
+          سند
+        </Link>
       </div>
-      <div className="columns-1 sm:columns-2 lg:columns-3 gap-4">
+      <div className="columns-1 sm:columns-2 lg:columns-2 gap-4">
         {posts.map((p) => (
           <MediaCard key={p.id} post={p} />
         ))}

@@ -1,4 +1,4 @@
-export type MediaType = 'video' | 'image' | 'audio' | 'none'
+export type MediaType = 'video' | 'image' | 'audio' | 'document' | 'none'
 
 export interface Post {
   id: number
@@ -9,4 +9,3 @@ export interface Post {
   width: number | null
   height: number | null
 }
-

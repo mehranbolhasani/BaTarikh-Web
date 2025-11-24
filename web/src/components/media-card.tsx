@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { Post } from '@/types/post'
 import dynamic from 'next/dynamic'
@@ -10,6 +11,7 @@ import 'vidstack/styles/base.css'
 import 'vidstack/styles/defaults.css'
 import 'vidstack/styles/community-skin/audio.css'
 import 'vidstack/styles/community-skin/video.css'
+import { FileDown } from 'lucide-react'
 
 type MediaPlayerProps = { src: string; title?: string; className?: string; children?: React.ReactNode }
 type EmptyProps = Record<string, never>
@@ -66,26 +68,42 @@ export function MediaCard({ post }: { post: Post }) {
   return (
     <Card ref={ref}>
       {post.media_type === 'image' && post.media_url && (
-        <Image
-          src={post.media_url}
-          alt=""
-          width={post.width ?? 800}
-          height={post.height ?? 600}
-          sizes="(min-width:1024px) 33vw, (min-width:640px) 50vw, 100vw"
-          className="w-full h-auto object-cover"
-        />
+        <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : '4/3' }} className="w-full">
+          <Image
+            src={post.media_url}
+            alt=""
+            width={post.width ?? 800}
+            height={post.height ?? 600}
+            sizes="(min-width:1024px) 33vw, (min-width:640px) 50vw, 100vw"
+            className="w-full h-full object-cover"
+          />
+        </div>
       )}
-      {post.media_type === 'video' && post.media_url && inView && (
-        <MediaPlayer src={post.media_url} title="Video" className="w-full">
-          <MediaOutlet />
-          <MediaCommunitySkin />
-        </MediaPlayer>
+      {post.media_type === 'video' && post.media_url && (
+        <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : '16/9' }} className="w-full">
+          {inView && (
+            <MediaPlayer src={post.media_url} title="Video" className="w-full h-full">
+              <MediaOutlet />
+              <MediaCommunitySkin />
+            </MediaPlayer>
+          )}
+        </div>
       )}
       {post.media_type === 'audio' && post.media_url && inView && (
         <MediaPlayer src={post.media_url} title="Audio" className="w-full">
           <MediaOutlet />
           <MediaCommunitySkin />
         </MediaPlayer>
+      )}
+      {post.media_type === 'document' && post.media_url && (
+        <div className="w-full px-6">
+          <Button asChild variant="outline" className="w-full justify-start">
+            <a href={post.media_url} target="_blank" rel="noreferrer" download>
+              <FileDown className="mr-2" />
+              دانلود PDF
+            </a>
+          </Button>
+        </div>
       )}
       <CardHeader className="border-b">
         <CardTitle className="text-base flex items-center gap-2">
