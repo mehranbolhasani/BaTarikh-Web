@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { Post } from "@/types/post";
 import { MediaCard } from "@/components/media-card";
 import Link from "next/link";
@@ -16,15 +16,25 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
   const from = (page - 1) * perPage;
   const to = from + perPage - 1;
 
-  let query = supabase
-    .from("posts")
-    .select("id,created_at,content,media_type,media_url,width,height", { count: "exact" })
-    .order("created_at", { ascending: false })
-    .range(from, to);
-  if (type && ["image","video","audio","document","none"].includes(type)) {
-    query = query.eq("media_type", type);
+  const client = getSupabase();
+  let data: Post[] | null = null;
+  let count: number | null = null;
+  if (client) {
+    let query = client
+      .from("posts")
+      .select("id,created_at,content,media_type,media_url,width,height", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (type && ["image","video","audio","document","none"].includes(type)) {
+      query = query.eq("media_type", type);
+    }
+    const res = await query;
+    data = (res.data || []) as Post[];
+    count = (res.count ?? null);
+  } else {
+    data = [];
+    count = 0;
   }
-  const { data, count } = await query;
 
   const posts = (data || []) as Post[];
 
