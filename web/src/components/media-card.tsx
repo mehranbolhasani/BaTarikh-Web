@@ -4,14 +4,14 @@ import Image from 'next/image'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { Post } from '@/types/post'
+import type { Post, MediaType } from '@/types/post'
 import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import 'vidstack/styles/base.css'
 import 'vidstack/styles/defaults.css'
 import 'vidstack/styles/community-skin/audio.css'
 import 'vidstack/styles/community-skin/video.css'
-import { FileDown } from 'lucide-react'
+import { FileDown, Video, AudioLines, FileText, Image as ImageIcon, AlignRight } from 'lucide-react'
 
 type MediaPlayerProps = { src: string; title?: string; className?: string; children?: React.ReactNode }
 type EmptyProps = Record<string, never>
@@ -51,6 +51,22 @@ function sanitizeContent(s?: string | null) {
   }
 }
 
+function labelForType(t: MediaType) {
+  switch (t) {
+    case 'video':
+      return 'ویدئو'
+    case 'audio':
+      return 'صوت'
+    case 'image':
+      return 'تصویر'
+    case 'document':
+      return 'سند'
+    case 'none':
+    default:
+      return 'پست'
+  }
+}
+
 export function MediaCard({ post }: { post: Post }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [inView, setInView] = useState(false)
@@ -80,11 +96,12 @@ export function MediaCard({ post }: { post: Post }) {
         const isPdf = !!post.media_url && post.media_url.toLowerCase().endsWith('.pdf')
         const isDocument = post.media_type === 'document' || isPdf
         if (isDocument && post.media_url) {
+          const href = `/download?${new URLSearchParams({ url: post.media_url, name: `post-${post.id}.pdf` }).toString()}`
           return (
-            <div className="w-full px-6">
-              <Button asChild variant="outline" className="w-full justify-start">
-                <a href={post.media_url} target="_blank" rel="noreferrer" download>
-                  <FileDown className="mr-2" />
+            <div className="w-fit pr-4 pt-4">
+              <Button asChild variant="pdf" size="lg" className="w-full justify-start py-6 px-2">
+                <a href={href} target="_blank" rel="noreferrer">
+                  <FileDown className="ml-2" />
                   دانلود PDF
                 </a>
               </Button>
@@ -128,7 +145,14 @@ export function MediaCard({ post }: { post: Post }) {
       </CardContent>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          <Badge variant="secondary">{post.media_type}</Badge>
+          <Badge variant="outline" className="text-md font-light px-0 rounded-none text-neutral-600! border-none!">
+            {post.media_type === 'none' && <AlignRight className="ml-0" />}
+            {post.media_type === 'video' && <Video className="ml-0" />}
+            {post.media_type === 'audio' && <AudioLines className="ml-0" />}
+            {post.media_type === 'image' && <ImageIcon className="ml-0" />}
+            {post.media_type === 'document' && <FileText className="ml-0" />}
+            {labelForType(post.media_type)}
+          </Badge>
         </CardTitle>
         <CardDescription suppressHydrationWarning>
           <a

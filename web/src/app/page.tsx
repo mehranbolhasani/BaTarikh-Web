@@ -4,76 +4,86 @@ import { MediaCard } from "@/components/media-card";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn, buildHref } from "@/lib/utils";
+import { ArrowRight, ArrowLeft } from "lucide-react";
 
 export const revalidate = 30;
 
-export default async function Home({ searchParams }: { searchParams?: Promise<{ type?: string; after?: string; before?: string }> }) {
+export default async function Home({ searchParams }: { searchParams?: Promise<{ type?: string; page?: string }> }) {
   const resolved = searchParams ? await searchParams : undefined;
   const type = resolved?.type;
-  const after = resolved?.after;
-  const before = resolved?.before;
+  const page = Math.max(1, Number(resolved?.page ?? 1) || 1);
   const perPage = 18;
-  
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+
   let query = supabase
     .from("posts")
     .select("id,created_at,content,media_type,media_url,width,height", { count: "exact" })
     .order("created_at", { ascending: false })
-    .limit(perPage);
+    .range(from, to);
   if (type && ["image","video","audio","document","none"].includes(type)) {
     query = query.eq("media_type", type);
   }
-  if (after) {
-    query = query.lt("created_at", after);
-  }
-  if (before) {
-    query = query.gt("created_at", before);
-  }
-  const { data } = await query;
+  const { data, count } = await query;
 
   const posts = (data || []) as Post[];
 
   const active = type ?? "all";
-  const hasPrev = Boolean(after || before);
-  const hasNext = posts.length === perPage;
-  const nextCursor = posts.length ? posts[posts.length - 1].created_at : undefined;
-  const prevCursor = posts.length ? posts[0].created_at : undefined;
+  const total = typeof count === 'number' ? count : posts.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const hasPrev = page > 1;
+  const hasNext = page < totalPages;
+  const makePages = (current: number, total: number) => {
+    const arr: (number | '...')[] = [];
+    const add = (x: number | '...') => { arr.push(x) };
+    const start = Math.max(2, current - 2);
+    const end = Math.min(total - 1, current + 2);
+    add(1);
+    if (start > 2) add('...');
+    for (let i = start; i <= end; i++) add(i);
+    if (end < total - 1) add('...');
+    if (total > 1) add(total);
+    return arr;
+  };
+  const pages = makePages(page, totalPages);
+  const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n);
 
   return (
-    <main className="pr-4 col-span-2">
-      <div className="inline-flex h-9 items-center rounded-lg bg-muted p-[3px] mb-4">
+    <main className="p-0 md:pr-4 col-span-1">
+      <div className="flex md:inline-flexh-12 items-center rounded-lg bg-card p-[5px] mb-4 shadow-sm">
         <Link
-          href={buildHref({})}
-          className={cn("px-2 py-1 rounded-md", active === "all" ? "bg-background" : undefined)}
+          href={buildHref({ page: "1" })}
+          className={cn("px-2 py-1 rounded-md flex-1 text-center", active === "all" ? "bg-primary text-primary-foreground" : undefined)}
         >
           همه
         </Link>
         <Link
-          href={buildHref({ type: "image" })}
-          className={cn("px-2 py-1 rounded-md", active === "image" ? "bg-background" : undefined)}
+          href={buildHref({ type: "image", page: "1" })}
+          className={cn("px-2 py-1 rounded-md flex-1 text-center", active === "image" ? "bg-primary text-primary-foreground" : undefined)}
         >
           تصویر
         </Link>
         <Link
-          href={buildHref({ type: "video" })}
-          className={cn("px-2 py-1 rounded-md", active === "video" ? "bg-background" : undefined)}
+          href={buildHref({ type: "video", page: "1" })}
+          className={cn("px-2 py-1 rounded-md flex-1 text-center", active === "video" ? "bg-primary text-primary-foreground" : undefined)}
         >
           ویدئو
         </Link>
         <Link
-          href={buildHref({ type: "audio" })}
-          className={cn("px-2 py-1 rounded-md", active === "audio" ? "bg-background" : undefined)}
+          href={buildHref({ type: "audio", page: "1" })}
+          className={cn("px-2 py-1 rounded-md flex-1 text-center", active === "audio" ? "bg-primary text-primary-foreground" : undefined)}
         >
           صوتی
         </Link>
         <Link
-          href={buildHref({ type: "none" })}
-          className={cn("px-2 py-1 rounded-md", active === "none" ? "bg-background" : undefined)}
+          href={buildHref({ type: "none", page: "1" })}
+          className={cn("px-2 py-1 rounded-md flex-1 text-center", active === "none" ? "bg-primary text-primary-foreground" : undefined)}
         >
           متنی
         </Link>
         <Link
-          href={buildHref({ type: "document" })}
-          className={cn("px-2 py-1 rounded-md", active === "document" ? "bg-background" : undefined)}
+          href={buildHref({ type: "document", page: "1" })}
+          className={cn("px-2 py-1 rounded-md flex-1 text-center", active === "document" ? "bg-primary text-primary-foreground" : undefined)}
         >
           سند
         </Link>
@@ -84,27 +94,40 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
         ))}
         {posts.length === 0 && <p className="text-zinc-600">هنوز پستی وجود ندارد.</p>}
       </div>
-      <div className="mt-6 flex items-center justify-between">
+      <div className="mt-16 flex items-center justify-center w-fit mx-auto gap-4">
         <Button
           asChild
           variant="outline"
           className={!hasPrev ? "pointer-events-none opacity-50" : undefined}
         >
-          <Link href={buildHref({ type, before: prevCursor })}>
-            قبلی
+          <Link href={buildHref({ type, page: String(Math.max(1, page - 1)) })}>
+            <ArrowRight className="size-4" />
           </Link>
         </Button>
-        <span className="text-sm text-muted-foreground">{active === 'all' ? 'زمان‌بندی' : 'فیلتر'} {active}</span>
-        <Button asChild variant="ghost">
-          <Link href={buildHref({ type })}>آخرین</Link>
-        </Button>
+        <span className="text-sm text-muted-foreground">صفحه {fa(page)} از {fa(totalPages)}</span>
+        <div className="flex items-center gap-2">
+          {pages.map((p, idx) => (
+            p === '...'
+              ? <span key={`dots-${idx}`} className="text-muted-foreground">…</span>
+              : (
+                <Button
+                  key={p}
+                  asChild
+                  variant={p === page ? "default" : "ghost"}
+                  size="sm"
+                >
+                  <Link href={buildHref({ type, page: String(p) })}>{fa(p as number)}</Link>
+                </Button>
+              )
+          ))}
+        </div>
         <Button
           asChild
           variant="outline"
-          className={!hasNext || !nextCursor ? "pointer-events-none opacity-50" : undefined}
+          className={!hasNext ? "pointer-events-none opacity-50" : undefined}
         >
-          <Link href={buildHref({ type, after: nextCursor })}>
-            بعدی
+          <Link href={buildHref({ type, page: String(Math.min(totalPages, page + 1)) })}>
+            <ArrowLeft className="size-4" />
           </Link>
         </Button>
       </div>

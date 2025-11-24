@@ -63,7 +63,7 @@ export default function RootLayout({
           />
             {/* Your Content/Components */}
         </div>
-        <div className="w-full max-w-6xl mx-auto py-20 grid grid-cols-3 gap-4">
+        <div className="w-full max-w-6xl mx-auto py-4 md:py-20 px-4 md:px-0grid grid-col-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Header />
         {children}
         <Footer />
