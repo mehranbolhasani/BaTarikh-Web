@@ -76,6 +76,23 @@ export function MediaCard({ post }: { post: Post }) {
 
   return (
     <Card ref={ref}>
+      {(() => {
+        const isPdf = !!post.media_url && post.media_url.toLowerCase().endsWith('.pdf')
+        const isDocument = post.media_type === 'document' || isPdf
+        if (isDocument && post.media_url) {
+          return (
+            <div className="w-full px-6">
+              <Button asChild variant="outline" className="w-full justify-start">
+                <a href={post.media_url} target="_blank" rel="noreferrer" download>
+                  <FileDown className="mr-2" />
+                  دانلود PDF
+                </a>
+              </Button>
+            </div>
+          )
+        }
+        return null
+      })()}
       {post.media_type === 'image' && post.media_url && (
         <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : '4/3' }} className="w-full">
           <Image
@@ -103,16 +120,6 @@ export function MediaCard({ post }: { post: Post }) {
           <MediaOutlet />
           <MediaCommunitySkin />
         </MediaPlayer>
-      )}
-      {post.media_type === 'document' && post.media_url && (
-        <div className="w-full px-6">
-          <Button asChild variant="outline" className="w-full justify-start">
-            <a href={post.media_url} target="_blank" rel="noreferrer" download>
-              <FileDown className="mr-2" />
-              دانلود PDF
-            </a>
-          </Button>
-        </div>
       )}
       <CardContent>
         {post.content && (
