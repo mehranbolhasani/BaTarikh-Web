@@ -1,9 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "vidstack/styles/base.css";
-@import "vidstack/styles/defaults.css";
-@import "vidstack/styles/community-skin/audio.css";
-@import "vidstack/styles/community-skin/video.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -122,5 +118,16 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  .font-peyda {
+    font-family: var(--font-peyda);
+  }
+  .font-peyda-black {
+    font-family: var(--font-peyda);
+    font-weight: 900;
+  }
+  .font-peyda-extrablack {
+    font-family: var(--font-peyda);
+    font-weight: 950;
   }
 }

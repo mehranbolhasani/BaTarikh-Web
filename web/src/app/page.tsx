@@ -2,57 +2,75 @@ import { supabase } from "@/lib/supabase";
 import { Post } from "@/types/post";
 import { MediaCard } from "@/components/media-card";
 import Link from "next/link";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { cn, buildHref } from "@/lib/utils";
 
-export default async function Home({ searchParams }: { searchParams?: Promise<{ type?: string; page?: string }> }) {
-  const resolved = searchParams ? await searchParams : undefined;
-  const type = resolved?.type;
-  const page = Math.max(1, Number(resolved?.page ?? 1) || 1);
-  const perPage = 30;
-  const from = (page - 1) * perPage;
-  const to = from + perPage - 1;
+export const revalidate = 30;
+
+export default async function Home({ searchParams }: { searchParams?: { type?: string; after?: string; before?: string } }) {
+  const type = searchParams?.type;
+  const after = searchParams?.after;
+  const before = searchParams?.before;
+  const perPage = 18;
+  
   let query = supabase
     .from("posts")
-    .select("*", { count: "exact" })
+    .select("id,created_at,content,media_type,media_url,width,height", { count: "exact" })
     .order("created_at", { ascending: false })
-    .range(from, to);
+    .limit(perPage);
   if (type && ["image","video","audio","none"].includes(type)) {
     query = query.eq("media_type", type);
+  }
+  if (after) {
+    query = query.lt("created_at", after);
+  }
+  if (before) {
+    query = query.gt("created_at", before);
   }
   const { data } = await query;
 
   const posts = (data || []) as Post[];
 
   const active = type ?? "all";
-  const hasPrev = page > 1;
-  const hasNext = (posts.length === perPage); // heuristic without count
+  const hasPrev = Boolean(after || before);
+  const hasNext = posts.length === perPage;
+  const nextCursor = posts.length ? posts[posts.length - 1].created_at : undefined;
+  const prevCursor = posts.length ? posts[0].created_at : undefined;
 
   return (
-    <main className="mx-auto max-w-7xl p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-semibold">بـاتاریخ</h1>
-        <p className="text-sm text-muted-foreground">آرشیو کانال تلگرام batarikh</p>
+    <main className="pr-4 col-span-2">
+      <div className="inline-flex h-9 items-center rounded-lg bg-muted p-[3px] mb-4">
+        <Link
+          href={buildHref({})}
+          className={cn("px-2 py-1 rounded-md", active === "all" ? "bg-background" : undefined)}
+        >
+          همه
+        </Link>
+        <Link
+          href={buildHref({ type: "image" })}
+          className={cn("px-2 py-1 rounded-md", active === "image" ? "bg-background" : undefined)}
+        >
+          تصویر
+        </Link>
+        <Link
+          href={buildHref({ type: "video" })}
+          className={cn("px-2 py-1 rounded-md", active === "video" ? "bg-background" : undefined)}
+        >
+          ویدئو
+        </Link>
+        <Link
+          href={buildHref({ type: "audio" })}
+          className={cn("px-2 py-1 rounded-md", active === "audio" ? "bg-background" : undefined)}
+        >
+          صوتی
+        </Link>
+        <Link
+          href={buildHref({ type: "none" })}
+          className={cn("px-2 py-1 rounded-md", active === "none" ? "bg-background" : undefined)}
+        >
+          متنی
+        </Link>
       </div>
-      <Tabs defaultValue={active} className="mb-4">
-        <TabsList>
-          <TabsTrigger value="all" asChild>
-            <Link href={`/?${new URLSearchParams({ page: "1" }).toString()}`}>همه</Link>
-          </TabsTrigger>
-          <TabsTrigger value="image" asChild>
-            <Link href={`/?${new URLSearchParams({ type: "image", page: "1" }).toString()}`}>تصویر</Link>
-          </TabsTrigger>
-          <TabsTrigger value="video" asChild>
-            <Link href={`/?${new URLSearchParams({ type: "video", page: "1" }).toString()}`}>ویدئو</Link>
-          </TabsTrigger>
-          <TabsTrigger value="audio" asChild>
-            <Link href={`/?${new URLSearchParams({ type: "audio", page: "1" }).toString()}`}>صوتی</Link>
-          </TabsTrigger>
-          <TabsTrigger value="none" asChild>
-            <Link href={`/?${new URLSearchParams({ type: "none", page: "1" }).toString()}`}>متنی</Link>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
       <div className="columns-1 sm:columns-2 lg:columns-3 gap-4">
         {posts.map((p) => (
           <MediaCard key={p.id} post={p} />
@@ -65,17 +83,20 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
           variant="outline"
           className={!hasPrev ? "pointer-events-none opacity-50" : undefined}
         >
-          <Link href={`/?${new URLSearchParams({ ...(type ? { type } : {}), page: String(Math.max(1, page - 1)) }).toString()}`}>
+          <Link href={buildHref({ type, before: prevCursor })}>
             قبلی
           </Link>
         </Button>
-        <span className="text-sm text-muted-foreground">صفحه {page}</span>
+        <span className="text-sm text-muted-foreground">{active === 'all' ? 'زمان‌بندی' : 'فیلتر'} {active}</span>
+        <Button asChild variant="ghost">
+          <Link href={buildHref({ type })}>آخرین</Link>
+        </Button>
         <Button
           asChild
           variant="outline"
-          className={!hasNext ? "pointer-events-none opacity-50" : undefined}
+          className={!hasNext || !nextCursor ? "pointer-events-none opacity-50" : undefined}
         >
-          <Link href={`/?${new URLSearchParams({ ...(type ? { type } : {}), page: String(page + 1) }).toString()}`}>
+          <Link href={buildHref({ type, after: nextCursor })}>
             بعدی
           </Link>
         </Button>

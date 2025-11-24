@@ -7,6 +7,11 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 from dotenv import load_dotenv
+try:
+    from PIL import Image
+    HAS_PIL = True
+except Exception:
+    HAS_PIL = False
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
 import boto3
@@ -144,6 +149,26 @@ async def process_message(msg):
             os.remove(fp)
         except Exception:
             pass
+        if mt == "image" and HAS_PIL and isinstance(fp, str):
+            try:
+                with Image.open(fp) as im:
+                    sizes = [640, 1024]
+                    for s in sizes:
+                        try:
+                            im_copy = im.copy()
+                            im_copy.thumbnail((s, s))
+                            out_path = f"{fp}.resized-{s}"
+                            im_copy.save(out_path)
+                            vkey = f"{msg.chat.id}/{msg.id}-w{s}{ext}"
+                            _upload_to_r2(out_path, vkey)
+                            try:
+                                os.remove(out_path)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+            except Exception:
+                pass
     content = msg.caption or msg.text
     created = msg.date.isoformat()
     STATS["processed"] += 1

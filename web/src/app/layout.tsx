@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
+import { Header } from "@/components/header";
+import { Footer } from "@/components/footer";
 
 const estedad = localFont({
   variable: "--font-estedad",
@@ -15,6 +17,15 @@ const estedad = localFont({
     { path: "./fonts/Estedad-Bold.woff2", weight: "700", style: "normal" },
     { path: "./fonts/Estedad-ExtraBold.woff2", weight: "800", style: "normal" },
     { path: "./fonts/Estedad-Black.woff2", weight: "900", style: "normal" },
+  ],
+  display: "swap",
+});
+
+const peyda = localFont({
+  variable: "--font-peyda",
+  src: [
+    { path: "./fonts/PeydaWeb-Black.woff2", weight: "900", style: "normal" },
+    { path: "./fonts/PeydaWeb-ExtraBlack.woff2", weight: "950", style: "normal" },
   ],
   display: "swap",
 });
@@ -37,9 +48,27 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <body
-        className={`${estedad.className} ${geistMono.variable} antialiased`}
+        className={`${estedad.className} ${geistMono.variable} ${peyda.variable} antialiased bg-neutral-100`}
       >
+        <div className="relative">
+        <div className="min-h-screen w-full bg-white fixed -z-1 top-0">
+          {/* Noise Texture (Darker Dots) Background */}
+          <div
+            className="absolute inset-0 z-0"
+            style={{
+              background: "#f5f5f5",
+              backgroundImage: "radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.35) 1px, transparent 0)",
+              backgroundSize: "20px 20px",
+            }}
+          />
+            {/* Your Content/Components */}
+        </div>
+        <div className="w-full max-w-5xl mx-auto py-20 grid grid-cols-3 gap-4">
+        <Header />
         {children}
+        <Footer />
+        </div>
+        </div>
       </body>
     </html>
   );
