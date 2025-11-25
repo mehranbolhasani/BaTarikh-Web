@@ -3,7 +3,7 @@ import batarikh from "@/app/img/batarikh.jpg"
 
 export function Header() {
   return (
-    <header className="relative md:sticky top-0 md:top-4 h-[400px] md:h-[600px] bg-white rounded-2xl flex flex-col items-start overflow-hidden backdrop-blur-lg border border-white col-span-1 gap-8 shadow-sm mb-6 md:mb-0">
+    <header className="relative md:sticky top-0 md:top-4 h-[400px] md:h-[600px] bg-white rounded-2xl flex flex-col items-start overflow-hidden backdrop-blur-lg border border-white col-span-1 gap-8 shadow-sm mb-6 md:mb-0 min-w-0">
       <div className="w-full h-2/3 relative">
         <Image
           src={batarikh}

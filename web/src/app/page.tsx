@@ -87,7 +87,7 @@ export default async function Home({ searchParams }: { searchParams?: Promise<{ 
   const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n);
 
   return (
-    <main className="p-0 md:pr-4 col-span-1 md:col-span-2">
+    <main className="p-0 md:pr-4 col-span-1 md:col-span-2 min-w-0">
       <Script id="posts-jsonld" type="application/ld+json">
         {(() => {
           const channel = process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL || 'batarikh'

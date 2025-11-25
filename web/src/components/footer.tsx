@@ -2,7 +2,7 @@ import { Signature } from "lucide-react";
 
 export function Footer() {
   return (
-    <footer className="relative md:sticky md:bottom-0 mx-auto max-w-full pb-12 pt-24 pl-4 md:pt-0 col-span-1">
+    <footer className="relative md:sticky md:bottom-0 mx-auto max-w-full pb-12 pt-24 pl-4 md:pt-0 col-span-1 min-w-0">
       <div className="flex flex-col items-start justify-between text-sm text-neutral-600 leading-relaxed">
         <span className="h-3 w-3 bg-neutral-600 mb-2"></span>
         <p>
