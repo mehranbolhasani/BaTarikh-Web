@@ -37,7 +37,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://batarikh.xyz"),
-  title: { default: "با تاریخ", template: "%s | با تاریخ" },
+  title: { default: "با تاریخ", template: "با تاریخ / %s" },
   description: "نه بودن‌ِمان نه رفتن‌ِمان فرقی به حال دنیا نمی‌کند.",
   applicationName: "با تاریخ",
   alternates: { canonical: "/" },

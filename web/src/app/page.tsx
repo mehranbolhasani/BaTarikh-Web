@@ -8,27 +8,38 @@ import { ArrowRight, ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Script from "next/script";
 
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-export async function generateMetadata({ searchParams }: { searchParams?: { type?: string; page?: string } }): Promise<Metadata> {
-  const type = searchParams?.type
-  const page = Math.max(1, Number(searchParams?.page ?? 1) || 1)
+export async function generateMetadata({ searchParams }: { searchParams?: Promise<{ type?: string; page?: string }> }): Promise<Metadata> {
+  const resolved = searchParams ? await searchParams : undefined
+  const type = resolved?.type
+  const page = Math.max(1, Number(resolved?.page ?? 1) || 1)
   const site = process.env.NEXT_PUBLIC_SITE_URL || "https://batarikh.xyz"
   const labels: Record<string, string> = { image: "تصویر", video: "ویدئو", audio: "صوت", document: "سند", none: "متن" }
-  const titleBase = type && labels[type] ? labels[type] : "همه"
-  const title = page > 1 ? `${titleBase} – صفحه ${new Intl.NumberFormat('fa-IR').format(page)}` : titleBase
+  const titleBase = type && labels[type] ? labels[type] : undefined
+  const suffix = titleBase
+    ? (page > 1 ? `${titleBase} – صفحه ${new Intl.NumberFormat('fa-IR').format(page)}` : titleBase)
+    : undefined
+  const title = suffix ? `با تاریخ / ${suffix}` : undefined
   const href = buildHref({ type, page: String(page) })
   const canonical = `${site}${href === "/" ? "" : href}`
-  return {
-    title,
+  const meta: Metadata = {
     alternates: { canonical },
     robots: { index: true, follow: true },
   }
+  if (title) meta.title = title
+  if (suffix) {
+    meta.openGraph = { title }
+    meta.twitter = { title }
+  }
+  return meta
 }
 
-export default async function Home({ searchParams }: { searchParams?: { type?: string; page?: string } }) {
-  const type = searchParams?.type;
-  const page = Math.max(1, Number(searchParams?.page ?? 1) || 1);
+export default async function Home({ searchParams }: { searchParams?: Promise<{ type?: string; page?: string }> }) {
+  const resolved = searchParams ? await searchParams : undefined;
+  const type = resolved?.type;
+  const page = Math.max(1, Number(resolved?.page ?? 1) || 1);
   const perPage = 18;
   const from = (page - 1) * perPage;
   const to = from + perPage - 1;

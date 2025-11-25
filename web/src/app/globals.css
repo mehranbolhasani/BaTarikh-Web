@@ -130,4 +130,36 @@
     font-family: var(--font-peyda);
     font-weight: 950;
   }
+
+
+
+
+  /* Round corners, brand color, text color, border */
+:where(media-community-skin[data-audio]) {
+  --audio-bg: oklch(1 0 0 / 0);                   /* player surface */
+  --audio-border: 1px solid rgb(0 0 0 / 0);
+  --audio-border-radius: 0;
+  --audio-font-family: system-ui, sans-serif;
+  --audio-controls-color: oklch(0.28 0.07 46);       /* icons/text in controls */
+  --audio-title-color: oklch(0.29 0.06 54);          /* title text in the bar */
+  --audio-button-size: 42px;          /* min size of icon buttons */
+  --audio-play-button-size: 36px;     /* play button only */
+  --audio-play-button-bg: oklch(0.28 0.07 46);
+  --audio-play-button-color: #fff;
+  --audio-slider-value-border: 1px solid oklch(0.29 0.06 54);
+}
+
+/* Volume/time slider sizing & spacing */
+:where(media-community-skin[data-audio] media-volume-slider) {
+  max-width: 120px; min-width: 100px;
+}
+:where(media-community-skin[data-audio] media-time-slider) {
+  margin-top: -4px;
+}
+
+/* Hide elements you don’t want */
+:where(media-community-skin[data-audio] media-captions-button),
+:where(media-community-skin[data-audio] media-chapters-menu-button) {
+  display: none;
+}
 }

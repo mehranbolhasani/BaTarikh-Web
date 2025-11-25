@@ -17,6 +17,7 @@ from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from boto3.s3.transfer import S3Transfer, TransferConfig
 import mimetypes
 from supabase import create_client
@@ -38,6 +39,15 @@ R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_PUBLIC_BASE_URL = os.getenv("R2_PUBLIC_BASE_URL")
 TARGET_CHANNEL = os.getenv("TARGET_CHANNEL", "batarikh")
+
+# Image processing toggles (optimize egress by reducing derivatives)
+ENABLE_WEBP = os.getenv("ENABLE_WEBP", "1") == "1"
+ENABLE_AVIF = os.getenv("ENABLE_AVIF", "0") == "1"
+ENABLE_RESIZED_ORIGINALS = os.getenv("ENABLE_RESIZED_ORIGINALS", "0") == "1"
+try:
+    IMAGE_SIZES = [int(s.strip()) for s in os.getenv("IMAGE_SIZES", "1024").split(",") if s.strip().isdigit()]
+except Exception:
+    IMAGE_SIZES = [1024]
 
 missing = []
 for k in ["API_ID", "API_HASH", "SESSION_STRING", "R2_ENDPOINT", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_PUBLIC_BASE_URL"]:
@@ -142,6 +152,12 @@ def _upload_to_r2(file_path, object_key):
     attempts = 0
     while True:
         try:
+            # Idempotency: skip upload if object already exists
+            try:
+                r2.head_object(Bucket=R2_BUCKET, Key=object_key)
+                return f"{R2_PUBLIC_BASE_URL}/{object_key}"
+            except ClientError:
+                pass
             _transfer.upload_file(file_path, R2_BUCKET, object_key, extra_args={"ContentType": ct})
             return f"{R2_PUBLIC_BASE_URL}/{object_key}"
         except Exception as e:
@@ -161,63 +177,71 @@ async def process_message(msg):
         if mt == "image" and HAS_PIL and isinstance(fp, str):
             try:
                 with Image.open(fp) as im:
-                    sizes = [640, 1024]
+                    sizes = IMAGE_SIZES
                     for s in sizes:
                         try:
                             im_copy = im.copy()
                             im_copy.thumbnail((s, s))
-                            out_path = f"{fp}.resized-{s}"
-                            im_copy.save(out_path)
-                            vkey = f"{msg.chat.id}/{msg.id}-w{s}{ext}"
-                            _upload_to_r2(out_path, vkey)
+                            if ENABLE_RESIZED_ORIGINALS:
+                                try:
+                                    out_path = f"{fp}.resized-{s}"
+                                    im_copy.save(out_path)
+                                    vkey = f"{msg.chat.id}/{msg.id}-w{s}{ext}"
+                                    _upload_to_r2(out_path, vkey)
+                                    try:
+                                        os.remove(out_path)
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    pass
                             try:
-                                os.remove(out_path)
+                                if ENABLE_WEBP:
+                                    webp_path = f"{fp}.resized-{s}.webp"
+                                    im_copy.save(webp_path, format="WEBP", quality=75)
+                                    vkey_webp = f"{msg.chat.id}/{msg.id}-w{s}.webp"
+                                    _upload_to_r2(webp_path, vkey_webp)
+                                    try:
+                                        os.remove(webp_path)
+                                    except Exception:
+                                        pass
                             except Exception:
                                 pass
                             try:
-                                webp_path = f"{fp}.resized-{s}.webp"
-                                im_copy.save(webp_path, format="WEBP", quality=80)
-                                vkey_webp = f"{msg.chat.id}/{msg.id}-w{s}.webp"
-                                _upload_to_r2(webp_path, vkey_webp)
-                                try:
-                                    os.remove(webp_path)
-                                except Exception:
-                                    pass
-                            except Exception:
-                                pass
-                            try:
-                                avif_path = f"{fp}.resized-{s}.avif"
-                                im_copy.save(avif_path, format="AVIF")
-                                vkey_avif = f"{msg.chat.id}/{msg.id}-w{s}.avif"
-                                _upload_to_r2(avif_path, vkey_avif)
-                                try:
-                                    os.remove(avif_path)
-                                except Exception:
-                                    pass
+                                if ENABLE_AVIF:
+                                    avif_path = f"{fp}.resized-{s}.avif"
+                                    im_copy.save(avif_path, format="AVIF")
+                                    vkey_avif = f"{msg.chat.id}/{msg.id}-w{s}.avif"
+                                    _upload_to_r2(avif_path, vkey_avif)
+                                    try:
+                                        os.remove(avif_path)
+                                    except Exception:
+                                        pass
                             except Exception:
                                 pass
                         except Exception:
                             pass
                     try:
-                        webp_path = f"{fp}.webp"
-                        im.save(webp_path, format="WEBP", quality=80)
-                        o_webp_key = f"{msg.chat.id}/{msg.id}.webp"
-                        _upload_to_r2(webp_path, o_webp_key)
-                        try:
-                            os.remove(webp_path)
-                        except Exception:
-                            pass
+                        if ENABLE_WEBP:
+                            webp_path = f"{fp}.webp"
+                            im.save(webp_path, format="WEBP", quality=75)
+                            o_webp_key = f"{msg.chat.id}/{msg.id}.webp"
+                            _upload_to_r2(webp_path, o_webp_key)
+                            try:
+                                os.remove(webp_path)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                     try:
-                        avif_path = f"{fp}.avif"
-                        im.save(avif_path, format="AVIF")
-                        o_avif_key = f"{msg.chat.id}/{msg.id}.avif"
-                        _upload_to_r2(avif_path, o_avif_key)
-                        try:
-                            os.remove(avif_path)
-                        except Exception:
-                            pass
+                        if ENABLE_AVIF:
+                            avif_path = f"{fp}.avif"
+                            im.save(avif_path, format="AVIF")
+                            o_avif_key = f"{msg.chat.id}/{msg.id}.avif"
+                            _upload_to_r2(avif_path, o_avif_key)
+                            try:
+                                os.remove(avif_path)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
             except Exception:
