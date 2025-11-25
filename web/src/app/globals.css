@@ -136,7 +136,7 @@
 
   /* Round corners, brand color, text color, border */
 :where(media-community-skin[data-audio]) {
-  --audio-bg: oklch(1 0 0 / 0);                   /* player surface */
+  --audio-bg: oklch(0.96 0.06 96);                   /* player surface */
   --audio-border: 1px solid rgb(0 0 0 / 0);
   --audio-border-radius: 0;
   --audio-font-family: system-ui, sans-serif;
@@ -155,6 +155,14 @@
 }
 :where(media-community-skin[data-audio] media-time-slider) {
   margin-top: -4px;
+}
+
+:where(media-player [data-media-slider] [part~="track"]) {
+  background-color: oklch(0.29 0.06 54 / 0.1) !important;
+}
+
+:where(media-community-skin[data-audio] div[part="controls-group"]) {
+  flex-direction: row-reverse;
 }
 
 /* Hide elements you don’t want */

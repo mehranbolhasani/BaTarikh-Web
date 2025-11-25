@@ -9,7 +9,7 @@ const Card = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
         ref={ref}
         data-slot="card"
         className={cn(
-          "bg-amber-50 text-card-foreground flex flex-col rounded-2xl border border-amber-200 shadow-md break-inside-avoid mb-4 backdrop-blur-lg overflow-hidden",
+          "bg-amber-50 text-amber-950 flex flex-col rounded-2xl border border-amber-200 shadow-sm break-inside-avoid mb-4 backdrop-blur-lg overflow-hidden",
           className
         )}
         {...props}
@@ -24,7 +24,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-header"
       className={cn(
-        "flex items-center justify-between px-6 py-4 border-t border-neutral-200",
+        "flex items-center justify-between px-6 py-4 pr-16 border-t border-amber-200",
         className
       )}
       {...props}
@@ -69,7 +69,7 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-content"
-      className={cn("p-6", className)}
+      className={cn("p-8 pr-16", className)}
       {...props}
     />
   )

@@ -69,7 +69,7 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <body
-        className={`${estedad.className} ${geistMono.variable} ${peyda.variable} antialiased bg-neutral-100`}
+        className={`${estedad.className} ${geistMono.variable} ${peyda.variable} antialiased bg-neutral-100 selection:bg-amber-900 selection:text-amber-50`}
       >
         <div className="relative">
         <div className="min-h-screen w-full bg-white fixed -z-1 top-0">

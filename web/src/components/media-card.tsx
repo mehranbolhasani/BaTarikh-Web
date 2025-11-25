@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import type { Post, MediaType } from '@/types/post'
 import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState, type ComponentType } from 'react'
-import { FileDown, Video, AudioLines, FileText, Image as ImageIcon, AlignRight } from 'lucide-react'
+import { FileDown, Video, AudioLines, FileText, Image as ImageIcon, AlignRight, ArrowUpRight } from 'lucide-react'
 
 const VideoPlayer = dynamic(() => import('@/components/video-player').then(m => m.VideoPlayer), { ssr: false })
 const AudioPlayer = dynamic(() => import('@/components/audio-player').then(m => m.AudioPlayer), { ssr: false })
@@ -118,12 +118,12 @@ export function MediaCard({ post }: { post: Post }) {
       )}
       <CardContent>
         {post.content && (
-          <p className="text-sm whitespace-pre-wrap leading-6">{sanitizeContent(post.content)}</p>
+          <p className="text-md whitespace-pre-wrap leading-6">{sanitizeContent(post.content)}</p>
         )}
       </CardContent>
       <CardHeader>
         <h3 className="text-base flex items-center gap-2">
-          <Badge variant="outline" className="text-md font-light px-0 rounded-none text-neutral-600! border-none!">
+          <Badge variant="outline" className="text-md font-light px-0 rounded-none text-amber-900! border-none!">
             {post.media_type === 'none' && <AlignRight className="ml-0" />}
             {post.media_type === 'video' && <Video className="ml-0" />}
             {post.media_type === 'audio' && <AudioLines className="ml-0" />}
@@ -137,12 +137,18 @@ export function MediaCard({ post }: { post: Post }) {
             href={`https://t.me/${process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL || 'batarikh'}/${post.id}`}
             target="_blank"
             rel="noreferrer"
-            className="underline"
+            className="text-xs text-amber-800 font-semibold tracking-tighter"
           >
+            <ArrowUpRight className="inline-block h-4 w-4 ml-1 text-amber-800" />
             {formatDate(post.created_at)}
           </a>
         </CardDescription>
       </CardHeader>
+
+      <div className="line-bg absolute top-0 left-0 w-full h-full -z-1">
+        <div className="red-line absolute top-0 w-px h-full bg-red-200 right-10"></div>
+        <div className="horizontal-lines w-full h-full" style={{ backgroundSize: '25px 25px', backgroundImage: 'repeating-linear-gradient(0deg, oklch(0.93 0.03 256) 0 1px, oklch(0.99 0.03 102) 1px 35px)' }}></div>
+      </div>
     </Card>
   )
 }
