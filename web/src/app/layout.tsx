@@ -75,7 +75,7 @@ export default function RootLayout({
         <div className="min-h-screen w-full bg-white fixed -z-1 top-0">
           {/* Noise Texture (Darker Dots) Background */}
           <div
-            className="absolute inset-0 z-0"
+            className="absolute inset-0 z-0 opacity-40"
             style={{
               background: "#f5f5f5",
               backgroundImage: "radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.35) 1px, transparent 0)",
