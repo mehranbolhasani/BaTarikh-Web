@@ -1,0 +1,45 @@
+2025-11-29T15:06:40.000000000Z [inf]  Starting Container
+2025-11-29T15:06:42.342407930Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:42.342422301Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:42.342430874Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:42.342435751Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:43.455676810Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:43.455691699Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:43.455700365Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:43.456236625Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:44.409059368Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:44.409067169Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:44.409072266Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:44.409076591Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:46.314829325Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:46.314833670Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:46.314838469Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:46.314842717Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:48.356460267Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:48.356475434Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:48.356681407Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:48.356686951Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:49.632191334Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:49.632196864Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:49.632206434Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:49.632212516Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:51.355756926Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:51.355762913Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:51.355768346Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:51.355774362Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:53.281346691Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:53.281351423Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:53.281355745Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:53.281360448Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:54.439555783Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:54.439562091Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:54.439567172Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:54.439574596Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:56.337895126Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:56.337901346Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:56.337909043Z [err]      from dotenv import load_dotenv
+2025-11-29T15:06:56.337915362Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:58.286239190Z [err]  ModuleNotFoundError: No module named 'dotenv'
+2025-11-29T15:06:58.286274877Z [err]  Traceback (most recent call last):
+2025-11-29T15:06:58.286279339Z [err]    File "/app/ingest.py", line 10, in <module>
+2025-11-29T15:06:58.286284486Z [err]      from dotenv import load_dotenv
