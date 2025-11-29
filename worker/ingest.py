@@ -59,11 +59,14 @@ for k in ["API_ID", "API_HASH", "SESSION_STRING", "R2_ENDPOINT", "R2_BUCKET", "R
 if missing:
     raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
 
+# Configure client with explicit update settings
 app = Client(
     "telegram_worker",
     api_id=API_ID,
     api_hash=API_HASH,
     session_string=SESSION_STRING,
+    no_updates=False,  # Explicitly enable updates
+    workers=1,  # Use single worker for Railway deployment
 )
 
 r2 = boto3.client(
@@ -325,13 +328,56 @@ async def process_message(msg):
             logging.error(f"Failed to upsert post id={msg.id}: {e}")
             STATS["last_error"] = str(e)
 
-chat_filter = filters.chat(TARGET_CHANNEL) if TARGET_CHANNEL else filters.channel
+# Normalize channel identifier - add @ if not present and not a numeric ID
+def normalize_channel(channel: str) -> str:
+    """Normalize channel identifier for Pyrogram."""
+    if not channel:
+        return channel
+    # If it's already a numeric ID, return as is
+    if channel.lstrip('-').isdigit():
+        return channel
+    # If it doesn't start with @, add it
+    if not channel.startswith('@'):
+        return f'@{channel}'
+    return channel
+
+NORMALIZED_CHANNEL = normalize_channel(TARGET_CHANNEL) if TARGET_CHANNEL else None
+
+# Use more flexible filter - accept both channel username and ID
+if NORMALIZED_CHANNEL:
+    if NORMALIZED_CHANNEL.lstrip('-@').isdigit():
+        # It's a numeric ID
+        chat_filter = filters.chat(int(NORMALIZED_CHANNEL.lstrip('-')))
+    else:
+        # It's a username
+        chat_filter = filters.chat(NORMALIZED_CHANNEL)
+    logging.info(f"Listening for messages from channel: {NORMALIZED_CHANNEL}")
+else:
+    chat_filter = filters.channel
+    logging.warning("No TARGET_CHANNEL specified, listening to all channels")
+
+# Debug handler to log all incoming messages (can be disabled in production)
+@app.on_message(filters.all)
+async def debug_all_messages(client, message):
+    """Debug handler to see all incoming messages."""
+    if hasattr(message, 'chat') and message.chat:
+        chat_title = getattr(message.chat, 'title', 'Unknown')
+        chat_username = getattr(message.chat, 'username', 'None')
+        logging.debug(f"Received message from chat: {chat_title} (@{chat_username}, id: {message.chat.id})")
+
 @app.on_message(chat_filter)
 async def handle_message(client, message):
     try:
+        chat_info = f"chat_id={message.chat.id}"
+        if hasattr(message.chat, 'title'):
+            chat_info += f" title='{message.chat.title}'"
+        if hasattr(message.chat, 'username'):
+            chat_info += f" username=@{message.chat.username}"
+        logging.info(f"Received message id={message.id} from {chat_info}")
         await process_message(message)
+        logging.info(f"Successfully processed message id={message.id}")
     except Exception as e:
-        logging.error(f"Error processing message id={getattr(message, 'id', '?')}: {e}")
+        logging.error(f"Error processing message id={getattr(message, 'id', '?')}: {e}", exc_info=True)
 
 async def backfill() -> None:
     """Backfill historical messages from the channel."""
@@ -362,6 +408,21 @@ async def main() -> None:
         await app.start()
         STATS["connected"] = True
         logging.info("Telegram client started")
+        
+        # Verify channel access
+        if NORMALIZED_CHANNEL:
+            try:
+                chat = await app.get_chat(NORMALIZED_CHANNEL)
+                logging.info(f"Successfully connected to channel: {chat.title} (id: {chat.id})")
+                # Check if we're a member
+                try:
+                    member = await app.get_chat_member(NORMALIZED_CHANNEL, "me")
+                    logging.info(f"Channel membership status: {member.status}")
+                except Exception as e:
+                    logging.warning(f"Could not verify channel membership: {e}")
+            except Exception as e:
+                logging.error(f"Failed to access channel {NORMALIZED_CHANNEL}: {e}")
+                logging.error("Make sure the account is a member of the channel and has proper permissions")
         
         # Start heartbeat task
         async def heartbeat() -> None:
