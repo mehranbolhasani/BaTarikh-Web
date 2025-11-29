@@ -2,6 +2,40 @@
 
 ## Common Issues and Solutions
 
+### AUTH_KEY_DUPLICATED Error (406)
+
+**Error Message**: `[406 AUTH_KEY_DUPLICATED] - The same authorization key (session file) was used in more than one place simultaneously`
+
+**Cause**: The same `SESSION_STRING` is being used in multiple places at the same time.
+
+**Solutions**:
+1. **Stop all other instances**: Make sure the session is NOT being used:
+   - Stop any local development instances
+   - Stop any other Railway deployments using the same session
+   - Check if any other scripts/apps are using this session
+
+2. **Generate a new session for Railway**:
+   ```python
+   from pyrogram import Client
+   
+   api_id = YOUR_API_ID
+   api_hash = "YOUR_API_HASH"
+   
+   app = Client("railway_session", api_id=api_id, api_hash=api_hash)
+   app.start()
+   session_string = app.export_session_string()
+   print(f"New session string: {session_string}")
+   app.stop()
+   ```
+   Then update the `SESSION_STRING` environment variable in Railway.
+
+3. **Use separate sessions**: 
+   - One session for local development
+   - One session for Railway production
+   - Never use the same session in two places simultaneously
+
+**Important**: Telegram only allows ONE active connection per session at a time. If you need to run multiple instances, each must have its own unique session string.
+
 ### Worker Not Receiving New Messages
 
 #### 1. Check Channel Format

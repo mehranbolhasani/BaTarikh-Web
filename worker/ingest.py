@@ -15,7 +15,7 @@ try:
 except ImportError:
     HAS_PIL = False
 from pyrogram import Client, filters, idle
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, AuthKeyDuplicated
 from pyrogram.types import Message
 import boto3
 from botocore.config import Config
@@ -405,7 +405,24 @@ async def main() -> None:
     """Main async entry point."""
     start_status_server()
     try:
-        await app.start()
+        try:
+            await app.start()
+        except AuthKeyDuplicated as e:
+            logging.error("=" * 80)
+            logging.error("CRITICAL ERROR: AUTH_KEY_DUPLICATED")
+            logging.error("=" * 80)
+            logging.error("The same SESSION_STRING is being used in multiple places simultaneously.")
+            logging.error("This can happen if:")
+            logging.error("  1. The worker is running locally AND on Railway at the same time")
+            logging.error("  2. Multiple Railway deployments are using the same session")
+            logging.error("  3. Another application is using the same session string")
+            logging.error("")
+            logging.error("SOLUTION:")
+            logging.error("  - Stop ALL other instances using this session (local, other deployments)")
+            logging.error("  - OR generate a NEW session string specifically for Railway")
+            logging.error("  - Update SESSION_STRING environment variable in Railway")
+            logging.error("=" * 80)
+            raise
         STATS["connected"] = True
         logging.info("Telegram client started")
         
