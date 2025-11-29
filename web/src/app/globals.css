@@ -131,8 +131,18 @@
     font-weight: 950;
   }
 
+  /* Noise texture background */
+  .noise-texture-bg {
+    background: #f5f5f5;
+    background-image: radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.35) 1px, transparent 0);
+    background-size: 20px 20px;
+  }
 
-
+  /* Horizontal lines pattern for media cards */
+  .horizontal-lines-pattern {
+    background-size: 25px 25px;
+    background-image: repeating-linear-gradient(0deg, oklch(0.93 0.03 256) 0 1px, oklch(0.99 0.03 102) 1px 35px);
+  }
 
   /* Round corners, brand color, text color, border */
 :where(media-community-skin[data-audio]) {

@@ -1,4 +1,6 @@
-export type MediaType = 'video' | 'image' | 'audio' | 'document' | 'none'
+import type { MediaType } from '@/lib/constants'
+
+export type { MediaType }
 
 export interface Post {
   id: number

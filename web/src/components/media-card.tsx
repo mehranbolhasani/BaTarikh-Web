@@ -8,6 +8,8 @@ import type { Post, MediaType } from '@/types/post'
 import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { FileDown, Video, AudioLines, FileText, Image as ImageIcon, AlignRight, ArrowUpRight } from 'lucide-react'
+import { DEFAULT_IMAGE_ASPECT_RATIO, DEFAULT_VIDEO_ASPECT_RATIO, DEFAULT_TELEGRAM_CHANNEL } from '@/lib/constants'
+import { sanitizeContent } from '@/lib/utils'
 
 const VideoPlayer = dynamic(() => import('@/components/video-player').then(m => m.VideoPlayer), { ssr: false })
 const AudioPlayer = dynamic(() => import('@/components/audio-player').then(m => m.AudioPlayer), { ssr: false })
@@ -26,14 +28,6 @@ function formatDate(dateStr: string) {
   }
 }
 
-function sanitizeContent(s?: string | null) {
-  if (!s) return s
-  try {
-    return s.replace(/\s*@batarikh\s*$/i, '')
-  } catch {
-    return s
-  }
-}
 
 function labelForType(t: MediaType) {
   switch (t) {
@@ -95,7 +89,7 @@ export function MediaCard({ post }: { post: Post }) {
         return null
       })()}
       {post.media_type === 'image' && post.media_url && (
-        <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : '4/3' }} className="w-full">
+        <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : DEFAULT_IMAGE_ASPECT_RATIO }} className="w-full">
           <Image
             src={post.media_url}
             alt={(sanitizeContent(post.content) || `تصویر - ${formatDate(post.created_at)}`) as string}
@@ -107,7 +101,7 @@ export function MediaCard({ post }: { post: Post }) {
         </div>
       )}
       {post.media_type === 'video' && post.media_url && (
-        <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : '16/9' }} className="w-full">
+        <div style={{ aspectRatio: (post.width && post.height) ? `${post.width}/${post.height}` : DEFAULT_VIDEO_ASPECT_RATIO }} className="w-full">
           {inView && (
             <VideoPlayer src={post.media_url} title="Video" className="w-full h-full" />
           )}
@@ -134,7 +128,7 @@ export function MediaCard({ post }: { post: Post }) {
         </h3>
         <CardDescription suppressHydrationWarning>
           <a
-            href={`https://t.me/${process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL || 'batarikh'}/${post.id}`}
+            href={`https://t.me/${process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL || DEFAULT_TELEGRAM_CHANNEL}/${post.id}`}
             target="_blank"
             rel="noreferrer"
             className="text-xs text-amber-800 font-semibold tracking-tighter"
@@ -145,9 +139,9 @@ export function MediaCard({ post }: { post: Post }) {
         </CardDescription>
       </CardHeader>
 
-      <div className="line-bg absolute top-0 left-0 w-full h-full -z-1">
+      <div className="line-bg absolute top-0 left-0 w-full h-full -z-10">
         <div className="red-line absolute top-0 w-px h-full bg-red-200 right-10"></div>
-        <div className="horizontal-lines w-full h-full" style={{ backgroundSize: '25px 25px', backgroundImage: 'repeating-linear-gradient(0deg, oklch(0.93 0.03 256) 0 1px, oklch(0.99 0.03 102) 1px 35px)' }}></div>
+        <div className="horizontal-lines w-full h-full horizontal-lines-pattern"></div>
       </div>
     </Card>
   )

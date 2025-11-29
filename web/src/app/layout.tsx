@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
+import { DEFAULT_SITE_URL } from "@/lib/constants";
 
 const estedad = localFont({
   variable: "--font-estedad",
@@ -36,7 +37,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://batarikh.xyz"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || DEFAULT_SITE_URL),
   title: { default: "با تاریخ", template: "با تاریخ / %s" },
   description: "نه بودن‌ِمان نه رفتن‌ِمان فرقی به حال دنیا نمی‌کند.",
   applicationName: "با تاریخ",
@@ -72,19 +73,12 @@ export default function RootLayout({
         className={`${estedad.className} ${geistMono.variable} ${peyda.variable} antialiased bg-neutral-100 selection:bg-amber-900 selection:text-amber-50`}
       >
         <div className="relative">
-        <div className="min-h-screen w-full bg-white fixed -z-1 top-0">
+        <div className="min-h-screen w-full bg-white fixed -z-10 top-0">
           {/* Noise Texture (Darker Dots) Background */}
-          <div
-            className="absolute inset-0 z-0 opacity-40"
-            style={{
-              background: "#f5f5f5",
-              backgroundImage: "radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.35) 1px, transparent 0)",
-              backgroundSize: "20px 20px",
-            }}
-          />
+          <div className="absolute inset-0 z-0 opacity-40 noise-texture-bg" />
             {/* Your Content/Components */}
         </div>
-        <div className="w-full max-w-6xl mx-auto py-4 md:py-20 px-4 md:px-0 grid grid-col-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="w-full max-w-6xl mx-auto py-4 md:py-20 px-4 md:px-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Header />
         {children}
         <Footer />

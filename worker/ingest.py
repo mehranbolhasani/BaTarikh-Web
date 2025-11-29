@@ -6,21 +6,23 @@ import json
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
+from typing import Optional, Tuple, Dict, Any
 from dotenv import load_dotenv
 import re
 try:
     from PIL import Image
     HAS_PIL = True
-except Exception:
+except ImportError:
     HAS_PIL = False
 from pyrogram import Client, filters, idle
 from pyrogram.errors import FloodWait
+from pyrogram.types import Message
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from boto3.s3.transfer import S3Transfer, TransferConfig
 import mimetypes
-from supabase import create_client
+from supabase import create_client, Client as SupabaseClient
 
 mimetypes.add_type('image/avif', '.avif')
 mimetypes.add_type('image/webp', '.webp')
@@ -46,7 +48,8 @@ ENABLE_AVIF = os.getenv("ENABLE_AVIF", "0") == "1"
 ENABLE_RESIZED_ORIGINALS = os.getenv("ENABLE_RESIZED_ORIGINALS", "0") == "1"
 try:
     IMAGE_SIZES = [int(s.strip()) for s in os.getenv("IMAGE_SIZES", "1024").split(",") if s.strip().isdigit()]
-except Exception:
+except (ValueError, AttributeError) as e:
+    logging.warning(f"Failed to parse IMAGE_SIZES, using default: {e}")
     IMAGE_SIZES = [1024]
 
 missing = []
@@ -74,9 +77,14 @@ r2 = boto3.client(
 _transfer_cfg = TransferConfig(multipart_threshold=8 * 1024 * 1024, multipart_chunksize=8 * 1024 * 1024)
 _transfer = S3Transfer(r2, config=_transfer_cfg)
 
-supabase = None
+supabase: Optional[SupabaseClient] = None
 if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        logging.info("Supabase client initialized successfully")
+    except Exception as e:
+        logging.error(f"Failed to initialize Supabase client: {e}")
+        supabase = None
 else:
     logging.warning("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set; will skip DB upserts")
 
@@ -109,63 +117,104 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-def start_status_server():
+def start_status_server() -> None:
     try:
         port = int(os.getenv("PORT", "8000"))
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logging.warning(f"Invalid PORT value, using default 8000: {e}")
         port = 8000
-    server = HTTPServer(("0.0.0.0", port), StatusHandler)
-    t = threading.Thread(target=server.serve_forever, daemon=True)
-    t.start()
-    logging.info(f"Status server listening on :{port}")
+    try:
+        server = HTTPServer(("0.0.0.0", port), StatusHandler)
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        logging.info(f"Status server listening on :{port}")
+    except OSError as e:
+        logging.error(f"Failed to start status server: {e}")
 
-async def _download(msg):
-    while True:
+async def _download(msg: Message) -> Optional[str]:
+    """Download media from Telegram message with retry logic."""
+    max_retries = 10
+    retry_count = 0
+    while retry_count < max_retries:
         try:
             return await msg.download()
         except FloodWait as e:
-            await asyncio.sleep(e.value + 1)
+            wait_time = e.value + 1
+            logging.info(f"Rate limited, waiting {wait_time} seconds...")
+            await asyncio.sleep(wait_time)
+            retry_count += 1
+        except Exception as e:
+            logging.error(f"Failed to download media: {e}")
+            return None
+    logging.error(f"Max retries reached for download")
+    return None
 
-async def _media_info(msg):
-    if msg.photo:
-        p = await _download(msg)
-        return p, getattr(msg.photo, "width", None), getattr(msg.photo, "height", None), "image"
-    if msg.video:
-        p = await _download(msg)
-        return p, getattr(msg.video, "width", None), getattr(msg.video, "height", None), "video"
-    if msg.audio:
-        p = await _download(msg)
-        return p, None, None, "audio"
-    if getattr(msg, 'document', None):
-        # Detect PDFs specifically; otherwise mark as document
-        mime = getattr(msg.document, 'mime_type', None)
-        if (mime and mime.lower() == 'application/pdf') or (getattr(msg.document, 'file_name', '') or '').lower().endswith('.pdf'):
+async def _media_info(msg: Message) -> Tuple[Optional[str], Optional[int], Optional[int], str]:
+    """Extract media information from message."""
+    try:
+        if msg.photo:
             p = await _download(msg)
-            return p, None, None, "document"
-        # Optional: handle other documents similarly
-        # p = await _download(msg)
-        # return p, None, None, "document"
-    return None, None, None, "none"
+            width = getattr(msg.photo, "width", None)
+            height = getattr(msg.photo, "height", None)
+            return p, width, height, "image"
+        if msg.video:
+            p = await _download(msg)
+            width = getattr(msg.video, "width", None)
+            height = getattr(msg.video, "height", None)
+            return p, width, height, "video"
+        if msg.audio:
+            p = await _download(msg)
+            return p, None, None, "audio"
+        if getattr(msg, 'document', None):
+            # Detect PDFs specifically; otherwise mark as document
+            mime = getattr(msg.document, 'mime_type', None)
+            file_name = getattr(msg.document, 'file_name', '') or ''
+            if (mime and mime.lower() == 'application/pdf') or file_name.lower().endswith('.pdf'):
+                p = await _download(msg)
+                return p, None, None, "document"
+        return None, None, None, "none"
+    except Exception as e:
+        logging.error(f"Error extracting media info: {e}")
+        return None, None, None, "none"
 
-def _upload_to_r2(file_path, object_key):
+def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
+    """Upload file to R2 storage with retry logic."""
+    if not os.path.exists(file_path):
+        logging.error(f"File not found: {file_path}")
+        return None
+    
     ct = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+    max_attempts = 5
     attempts = 0
-    while True:
+    
+    while attempts < max_attempts:
         try:
             # Idempotency: skip upload if object already exists
             try:
                 r2.head_object(Bucket=R2_BUCKET, Key=object_key)
+                logging.debug(f"Object already exists: {object_key}")
                 return f"{R2_PUBLIC_BASE_URL}/{object_key}"
-            except ClientError:
-                pass
+            except ClientError as e:
+                if e.response['Error']['Code'] != '404':
+                    raise
+            # Upload file
             _transfer.upload_file(file_path, R2_BUCKET, object_key, extra_args={"ContentType": ct})
+            logging.debug(f"Uploaded to R2: {object_key}")
             return f"{R2_PUBLIC_BASE_URL}/{object_key}"
-        except Exception as e:
+        except ClientError as e:
             attempts += 1
             STATS["last_error"] = str(e)
-            if attempts >= 5:
-                raise e
-            time.sleep(min(2 ** attempts, 10))
+            if attempts >= max_attempts:
+                logging.error(f"Failed to upload after {max_attempts} attempts: {e}")
+                raise
+            wait_time = min(2 ** attempts, 10)
+            logging.warning(f"Upload failed, retrying in {wait_time}s (attempt {attempts}/{max_attempts}): {e}")
+            time.sleep(wait_time)
+        except Exception as e:
+            logging.error(f"Unexpected error during upload: {e}")
+            STATS["last_error"] = str(e)
+            raise
+    return None
 
 async def process_message(msg):
     fp, w, h, mt = await _media_info(msg)
@@ -284,59 +333,84 @@ async def handle_message(client, message):
     except Exception as e:
         logging.error(f"Error processing message id={getattr(message, 'id', '?')}: {e}")
 
-async def backfill():
+async def backfill() -> None:
+    """Backfill historical messages from the channel."""
     try:
         limit = int(os.getenv("BACKFILL_LIMIT", "0"))
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logging.warning(f"Invalid BACKFILL_LIMIT, using 0: {e}")
         limit = 0
     if not TARGET_CHANNEL or limit <= 0:
+        logging.info("Backfill skipped: no limit set or no target channel")
         return
     count = 0
-    async for msg in app.get_chat_history(TARGET_CHANNEL, limit=limit):
-        await process_message(msg)
-        count += 1
-        if count % 50 == 0:
-            logging.info(f"Backfill progress: {count}/{limit} messages processed")
-
-def main_sync():
-    start_status_server()
-    app.start()
-    STATS["connected"] = True
     try:
-        if os.getenv("BACKFILL_ON_START") == "1":
-            async def backfill_wrapper():
-                try:
-                    await backfill()
-                except Exception as e:
-                    logging.error(f"Backfill task failed: {e}")
-            # Schedule backfill on the same loop to avoid cross-loop errors
-            app.loop.create_task(backfill_wrapper())
-        async def heartbeat():
-            interval = int(os.getenv("HEARTBEAT_SECS", "60"))
-            while True:
+        async for msg in app.get_chat_history(TARGET_CHANNEL, limit=limit):
+            await process_message(msg)
+            count += 1
+            if count % 50 == 0:
+                logging.info(f"Backfill progress: {count}/{limit} messages processed")
+        logging.info(f"Backfill completed: {count} messages processed")
+    except Exception as e:
+        logging.error(f"Backfill failed: {e}")
+        raise
+
+async def main() -> None:
+    """Main async entry point."""
+    start_status_server()
+    try:
+        await app.start()
+        STATS["connected"] = True
+        logging.info("Telegram client started")
+        
+        # Start heartbeat task
+        async def heartbeat() -> None:
+            try:
+                interval = int(os.getenv("HEARTBEAT_SECS", "60"))
+            except (ValueError, TypeError):
+                interval = 60
+            while STATS["connected"]:
                 logging.info(f"Heartbeat connected={STATS['connected']} processed={STATS['processed']} last_id={STATS['last_id']}")
                 await asyncio.sleep(interval)
-        app.loop.create_task(heartbeat())
-        idle()
-    finally:
-        app.stop()
-        STATS["connected"] = False
-
-async def main():
-    start_status_server()
-    await app.start()
-    STATS["connected"] = True
-    try:
+        
+        # Run backfill if enabled
         if os.getenv("BACKFILL_ON_START") == "1":
-            await backfill()
+            try:
+                await backfill()
+            except Exception as e:
+                logging.error(f"Backfill task failed: {e}")
+        
+        # Start heartbeat
+        heartbeat_task = asyncio.create_task(heartbeat())
+        
+        # Keep running
         await idle()
+        
+        # Cancel heartbeat
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+    except KeyboardInterrupt:
+        logging.info("Received interrupt signal")
+    except Exception as e:
+        logging.error(f"Worker error: {e}", exc_info=True)
+        raise
     finally:
-        await app.stop()
         STATS["connected"] = False
+        try:
+            await app.stop()
+            logging.info("Telegram client stopped")
+        except Exception as e:
+            logging.error(f"Error stopping client: {e}")
 
 if __name__ == "__main__":
     logging.info("Starting Telegram worker...")
     try:
-        main_sync()
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Worker stopped by user")
     except Exception as e:
-        logging.error(f"Worker crashed: {e}")
+        logging.error(f"Worker crashed: {e}", exc_info=True)
+        raise
