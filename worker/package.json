@@ -1,5 +1,11 @@
 {
-  "dependencies": {
-    "python": "^0.0.4"
+  "name": "telegram-worker",
+  "version": "1.0.0",
+  "description": "Telegram channel content ingestion worker",
+  "scripts": {
+    "start": "python ingest.py"
+  },
+  "engines": {
+    "python": "3.11.9"
   }
 }
