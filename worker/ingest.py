@@ -1,4 +1,57 @@
 import os
+import sys
+import subprocess
+
+# Install dependencies if missing (Railway workaround)
+def ensure_dependencies():
+    """Ensure required dependencies are installed."""
+    try:
+        import dotenv
+        return  # Dependencies already installed
+    except ImportError:
+        pass
+    
+    print("Dependencies not found. Installing from requirements.txt...", file=sys.stderr, flush=True)
+    
+    # Try to find requirements.txt in current directory or parent
+    req_paths = ["requirements.txt", "../requirements.txt", "/app/requirements.txt"]
+    req_file = None
+    for path in req_paths:
+        if os.path.exists(path):
+            req_file = path
+            break
+    
+    if not req_file:
+        print("ERROR: Could not find requirements.txt", file=sys.stderr, flush=True)
+        print(f"Current directory: {os.getcwd()}", file=sys.stderr, flush=True)
+        print(f"Files in current dir: {os.listdir('.')}", file=sys.stderr, flush=True)
+        sys.exit(1)
+    
+    try:
+        print(f"Installing from: {req_file}", file=sys.stderr, flush=True)
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "--quiet", 
+            "--upgrade", "pip"
+        ], stdout=sys.stderr, stderr=sys.stderr)
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "--quiet", 
+            "-r", req_file
+        ], stdout=sys.stderr, stderr=sys.stderr)
+        print("Dependencies installed successfully!", file=sys.stderr, flush=True)
+        
+        # Verify installation
+        try:
+            import dotenv
+            print("✓ Verified: dotenv is now available", file=sys.stderr, flush=True)
+        except ImportError:
+            print("ERROR: dotenv still not available after installation", file=sys.stderr, flush=True)
+            sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install dependencies: {e}", file=sys.stderr, flush=True)
+        sys.exit(1)
+
+ensure_dependencies()
+
 import time
 import logging
 import asyncio
