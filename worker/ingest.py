@@ -300,6 +300,16 @@ async def _media_info(msg: Message) -> Tuple[Optional[str], Optional[int], Optio
         logging.error(f"Error extracting media info: {e}")
         return None, None, None, "none"
 
+def _validate_r2_url(url: str) -> bool:
+    """Validate that R2 URL is properly formatted and R2_PUBLIC_BASE_URL is set."""
+    if not R2_PUBLIC_BASE_URL:
+        logging.warning("R2_PUBLIC_BASE_URL is not set! Media URLs will not work.")
+        return False
+    if not url or not url.startswith(("http://", "https://")):
+        logging.warning(f"Invalid R2 URL format: {url}")
+        return False
+    return True
+
 def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
     """Upload file to R2 storage with retry logic and circuit breaker."""
     if not _r2_circuit_breaker.can_proceed():
@@ -308,6 +318,11 @@ def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
     
     if not os.path.exists(file_path):
         logging.error(f"File not found: {file_path}")
+        return None
+    
+    # Validate R2_PUBLIC_BASE_URL before proceeding
+    if not R2_PUBLIC_BASE_URL:
+        logging.error("R2_PUBLIC_BASE_URL is not set! Cannot generate public URL.")
         return None
     
     ct = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
@@ -321,7 +336,10 @@ def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
                 r2.head_object(Bucket=R2_BUCKET, Key=object_key)
                 logging.debug(f"Object already exists: {object_key}")
                 _r2_circuit_breaker.record_success()
-                return f"{R2_PUBLIC_BASE_URL}/{object_key}"
+                url = f"{R2_PUBLIC_BASE_URL.rstrip('/')}/{object_key.lstrip('/')}"
+                if _validate_r2_url(url):
+                    return url
+                return None
             except ClientError as e:
                 if e.response['Error']['Code'] != '404':
                     raise
@@ -329,7 +347,10 @@ def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
             _transfer.upload_file(file_path, R2_BUCKET, object_key, extra_args={"ContentType": ct})
             logging.debug(f"Uploaded to R2: {object_key}")
             _r2_circuit_breaker.record_success()
-            return f"{R2_PUBLIC_BASE_URL}/{object_key}"
+            url = f"{R2_PUBLIC_BASE_URL.rstrip('/')}/{object_key.lstrip('/')}"
+            if _validate_r2_url(url):
+                return url
+            return None
         except ClientError as e:
             attempts += 1
             STATS["last_error"] = str(e)
@@ -461,24 +482,61 @@ async def process_message(msg, retry_count=0):
         # Upsert to Supabase with circuit breaker
         if supabase and _supabase_circuit_breaker.can_proceed():
             try:
-                supabase.table("posts").upsert({
+                # Prepare data for upsert
+                post_data = {
                     "id": msg.id,
                     "created_at": created,
                     "content": content,
                     "media_type": mt,
-                    "media_url": mu,
                     "width": w,
                     "height": h,
-                }).execute()
-                logging.info(f"Upserted post id={msg.id} type={mt}")
+                }
+                # Only include media_url if it's valid (not None, not empty, and properly formatted)
+                if mu and _validate_r2_url(mu):
+                    post_data["media_url"] = mu
+                else:
+                    if mu:
+                        logging.warning(f"Invalid media_url for post id={msg.id}, saving without it. URL: {mu}")
+                    post_data["media_url"] = None
+                
+                supabase.table("posts").upsert(post_data).execute()
+                logging.info(f"Upserted post id={msg.id} type={mt} media_url={'set' if post_data.get('media_url') else 'none'}")
                 _supabase_circuit_breaker.record_success()
             except Exception as e:
-                logging.error(f"Failed to upsert post id={msg.id}: {e}")
-                STATS["last_error"] = str(e)
-                _supabase_circuit_breaker.record_failure()
-                # Queue message for retry if critical
-                if retry_count < _max_retries:
-                    _queue_message_for_retry(msg, str(e), retry_count)
+                error_str = str(e)
+                # Check if it's an R2 401 error (bucket access issue)
+                if "401" in error_str or "Unauthorized" in error_str or "cloudflare.com" in error_str or "bucket cannot be viewed" in error_str:
+                    logging.warning(f"R2 bucket access issue for post id={msg.id}: {error_str[:200]}")
+                    logging.warning(f"R2_PUBLIC_BASE_URL is set to: {R2_PUBLIC_BASE_URL}")
+                    logging.warning(f"Make sure R2 bucket has public access enabled and R2_PUBLIC_BASE_URL is correct")
+                    logging.warning(f"Saving post without media_url")
+                    # Try again without media_url
+                    try:
+                        post_data_no_media = {
+                            "id": msg.id,
+                            "created_at": created,
+                            "content": content,
+                            "media_type": mt,
+                            "media_url": None,  # Set to None instead of invalid URL
+                            "width": w,
+                            "height": h,
+                        }
+                        supabase.table("posts").upsert(post_data_no_media).execute()
+                        logging.info(f"Upserted post id={msg.id} without media_url (R2 access issue)")
+                        _supabase_circuit_breaker.record_success()
+                    except Exception as e2:
+                        logging.error(f"Failed to upsert post id={msg.id} even without media_url: {e2}")
+                        STATS["last_error"] = str(e2)
+                        _supabase_circuit_breaker.record_failure()
+                        if retry_count < _max_retries:
+                            _queue_message_for_retry(msg, str(e2), retry_count)
+                else:
+                    logging.error(f"Failed to upsert post id={msg.id}: {e}")
+                    STATS["last_error"] = str(e)
+                    _supabase_circuit_breaker.record_failure()
+                    # Queue message for retry if critical
+                    if retry_count < _max_retries:
+                        _queue_message_for_retry(msg, str(e), retry_count)
         elif supabase:
             logging.warning("Supabase circuit breaker is open, skipping upsert")
             if retry_count < _max_retries:
