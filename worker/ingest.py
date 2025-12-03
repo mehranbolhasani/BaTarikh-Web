@@ -653,10 +653,28 @@ async def reconnect_client(max_retries=10, base_delay=5):
             logging.error("CRITICAL ERROR: AUTH_KEY_DUPLICATED")
             logging.error("=" * 80)
             logging.error("The same SESSION_STRING is being used in multiple places simultaneously.")
+            logging.error("")
+            logging.error("This error means:")
+            logging.error("  - Another instance is using the same session (local dev, another Railway deployment, etc.)")
+            logging.error("  - Telegram only allows ONE active connection per session at a time")
+            logging.error("")
             logging.error("SOLUTION:")
-            logging.error("  - Stop ALL other instances using this session")
-            logging.error("  - OR generate a NEW session string specifically for Railway")
+            logging.error("  1. Stop ALL other instances using this session:")
+            logging.error("     - Stop any local development instances")
+            logging.error("     - Stop any other Railway deployments using the same session")
+            logging.error("     - Check if you're running the worker locally")
+            logging.error("")
+            logging.error("  2. Generate a NEW session string specifically for Railway:")
+            logging.error("     - Run: python3 generate_session.py")
+            logging.error("     - Copy the new session string")
+            logging.error("     - Update SESSION_STRING in Railway environment variables")
+            logging.error("     - Redeploy")
+            logging.error("")
+            logging.error("  3. Verify only ONE instance is running:")
+            logging.error("     - Check Railway dashboard for other deployments")
+            logging.error("     - Check local terminal for running processes")
             logging.error("=" * 80)
+            logging.error("Worker will exit to prevent restart loop. Fix the session conflict and redeploy.")
             raise
         except Exception as e:
             retry_count += 1
@@ -760,6 +778,9 @@ async def main() -> None:
             except asyncio.CancelledError:
                 pass
         
+    except AuthKeyDuplicated:
+        # Re-raise to be handled by outer try-catch
+        raise
     except Exception as e:
         logging.error(f"Worker error: {e}", exc_info=True)
         if not _shutdown_event.is_set():
@@ -791,9 +812,24 @@ if __name__ == "__main__":
             logging.info("Worker stopped by user")
             break
         except AuthKeyDuplicated:
-            # Don't retry on auth errors
-            logging.error("Auth key duplicated, exiting")
-            sys.exit(1)
+            # Don't retry on auth errors - this is a configuration issue, not a transient failure
+            logging.error("=" * 80)
+            logging.error("FATAL: AUTH_KEY_DUPLICATED - Exiting to prevent restart loop")
+            logging.error("=" * 80)
+            logging.error("This is a CONFIGURATION ERROR, not a runtime error.")
+            logging.error("The worker cannot start because the session is already in use.")
+            logging.error("")
+            logging.error("ACTION REQUIRED:")
+            logging.error("1. Stop all other instances using this SESSION_STRING")
+            logging.error("2. Generate a new session string for Railway")
+            logging.error("3. Update SESSION_STRING environment variable")
+            logging.error("4. Redeploy")
+            logging.error("")
+            logging.error("Exiting with code 0 to prevent Railway from restarting in a loop.")
+            logging.error("=" * 80)
+            # Exit with 0 so Railway doesn't restart in a loop
+            # This is a configuration issue, not a runtime failure
+            sys.exit(0)
         except Exception as e:
             restart_count += 1
             logging.error(f"Worker crashed (restart {restart_count}/{max_restarts}): {e}", exc_info=True)
