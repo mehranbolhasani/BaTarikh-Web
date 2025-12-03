@@ -73,7 +73,7 @@ try:
 except ImportError:
     HAS_PIL = False
 from pyrogram import Client, filters, idle
-from pyrogram.errors import FloodWait, AuthKeyDuplicated, ConnectionError as PyrogramConnectionError
+from pyrogram.errors import FloodWait, AuthKeyDuplicated
 from pyrogram.types import Message
 import boto3
 from botocore.config import Config
