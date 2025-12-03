@@ -56,10 +56,15 @@ import time
 import logging
 import asyncio
 import json
+import signal
+import sys
+import gc
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, Deque
+from collections import deque
+from dataclasses import dataclass, asdict
 from dotenv import load_dotenv
 import re
 try:
@@ -68,7 +73,7 @@ try:
 except ImportError:
     HAS_PIL = False
 from pyrogram import Client, filters, idle
-from pyrogram.errors import FloodWait, AuthKeyDuplicated
+from pyrogram.errors import FloodWait, AuthKeyDuplicated, ConnectionError as PyrogramConnectionError
 from pyrogram.types import Message
 import boto3
 from botocore.config import Config
@@ -147,18 +152,76 @@ else:
 STATS = {
     "started_at": datetime.now(timezone.utc).isoformat(),
     "processed": 0,
+    "failed": 0,
+    "retried": 0,
     "last_id": None,
     "last_time": None,
     "last_error": None,
     "connected": False,
+    "reconnect_count": 0,
+    "queue_size": 0,
 }
+
+# Message queue for retry mechanism
+@dataclass
+class QueuedMessage:
+    message_id: int
+    chat_id: int
+    timestamp: float
+    retry_count: int
+    last_error: Optional[str]
+    message_data: Dict[str, Any]
+
+# In-memory queue (persisted to Supabase on failure)
+_message_queue: Deque[QueuedMessage] = deque(maxlen=1000)
+_shutdown_event = threading.Event()
+_max_retries = int(os.getenv("MAX_MESSAGE_RETRIES", "5"))
+_retry_delay_base = int(os.getenv("RETRY_DELAY_BASE_SECS", "60"))
+
+# Circuit breaker state
+class CircuitBreaker:
+    def __init__(self, failure_threshold=5, timeout=60):
+        self.failure_threshold = failure_threshold
+        self.timeout = timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "closed"  # closed, open, half_open
+    
+    def record_success(self):
+        self.failure_count = 0
+        self.state = "closed"
+    
+    def record_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = "open"
+            logging.warning(f"Circuit breaker opened after {self.failure_count} failures")
+    
+    def can_proceed(self):
+        if self.state == "closed":
+            return True
+        if self.state == "open":
+            if time.time() - self.last_failure_time > self.timeout:
+                self.state = "half_open"
+                logging.info("Circuit breaker entering half-open state")
+                return True
+            return False
+        return True  # half_open
+
+_r2_circuit_breaker = CircuitBreaker(failure_threshold=5, timeout=60)
+_supabase_circuit_breaker = CircuitBreaker(failure_threshold=5, timeout=60)
 
 class StatusHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/health", "/status"):
+            stats_copy = STATS.copy()
+            stats_copy["queue_size"] = len(_message_queue)
+            stats_copy["r2_circuit_breaker"] = _r2_circuit_breaker.state
+            stats_copy["supabase_circuit_breaker"] = _supabase_circuit_breaker.state
             body = json.dumps({
                 "ok": True,
-                "stats": STATS,
+                "stats": stats_copy,
                 "channel": TARGET_CHANNEL,
             }).encode()
             self.send_response(200)
@@ -172,6 +235,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Suppress default HTTP server logging
+        pass
 
 def start_status_server() -> None:
     try:
@@ -234,7 +301,11 @@ async def _media_info(msg: Message) -> Tuple[Optional[str], Optional[int], Optio
         return None, None, None, "none"
 
 def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
-    """Upload file to R2 storage with retry logic."""
+    """Upload file to R2 storage with retry logic and circuit breaker."""
+    if not _r2_circuit_breaker.can_proceed():
+        logging.warning("R2 circuit breaker is open, skipping upload")
+        return None
+    
     if not os.path.exists(file_path):
         logging.error(f"File not found: {file_path}")
         return None
@@ -249,6 +320,7 @@ def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
             try:
                 r2.head_object(Bucket=R2_BUCKET, Key=object_key)
                 logging.debug(f"Object already exists: {object_key}")
+                _r2_circuit_breaker.record_success()
                 return f"{R2_PUBLIC_BASE_URL}/{object_key}"
             except ClientError as e:
                 if e.response['Error']['Code'] != '404':
@@ -256,12 +328,14 @@ def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
             # Upload file
             _transfer.upload_file(file_path, R2_BUCKET, object_key, extra_args={"ContentType": ct})
             logging.debug(f"Uploaded to R2: {object_key}")
+            _r2_circuit_breaker.record_success()
             return f"{R2_PUBLIC_BASE_URL}/{object_key}"
         except ClientError as e:
             attempts += 1
             STATS["last_error"] = str(e)
             if attempts >= max_attempts:
                 logging.error(f"Failed to upload after {max_attempts} attempts: {e}")
+                _r2_circuit_breaker.record_failure()
                 raise
             wait_time = min(2 ** attempts, 10)
             logging.warning(f"Upload failed, retrying in {wait_time}s (attempt {attempts}/{max_attempts}): {e}")
@@ -269,42 +343,85 @@ def _upload_to_r2(file_path: str, object_key: str) -> Optional[str]:
         except Exception as e:
             logging.error(f"Unexpected error during upload: {e}")
             STATS["last_error"] = str(e)
+            _r2_circuit_breaker.record_failure()
             raise
     return None
 
-async def process_message(msg):
-    fp, w, h, mt = await _media_info(msg)
-    mu = None
-    if fp:
-        ext = os.path.splitext(fp)[1] if isinstance(fp, str) else ""
-        key = f"{msg.chat.id}/{msg.id}{ext}"
-        mu = _upload_to_r2(fp, key)
-        if mt == "image" and HAS_PIL and isinstance(fp, str):
-            try:
-                with Image.open(fp) as im:
-                    sizes = IMAGE_SIZES
-                    for s in sizes:
-                        try:
-                            im_copy = im.copy()
-                            im_copy.thumbnail((s, s))
-                            if ENABLE_RESIZED_ORIGINALS:
+async def process_message(msg, retry_count=0):
+    """Process a message with error handling and retry logic."""
+    try:
+        fp, w, h, mt = await _media_info(msg)
+        mu = None
+        if fp:
+            ext = os.path.splitext(fp)[1] if isinstance(fp, str) else ""
+            key = f"{msg.chat.id}/{msg.id}{ext}"
+            mu = _upload_to_r2(fp, key)
+            if mt == "image" and HAS_PIL and isinstance(fp, str):
+                try:
+                    # Check file size before processing (limit to 50MB)
+                    file_size = os.path.getsize(fp) if os.path.exists(fp) else 0
+                    max_image_size = int(os.getenv("MAX_IMAGE_SIZE_BYTES", "52428800"))  # 50MB default
+                    if file_size > max_image_size:
+                        logging.warning(f"Image too large ({file_size} bytes), skipping processing")
+                    else:
+                        with Image.open(fp) as im:
+                            # Limit image dimensions to prevent memory issues
+                            max_dimension = int(os.getenv("MAX_IMAGE_DIMENSION", "8192"))  # 8K default
+                            if im.width > max_dimension or im.height > max_dimension:
+                                logging.warning(f"Image dimensions too large ({im.width}x{im.height}), resizing...")
+                                ratio = min(max_dimension / im.width, max_dimension / im.height)
+                                new_size = (int(im.width * ratio), int(im.height * ratio))
+                                im = im.resize(new_size, Image.Resampling.LANCZOS)
+                            
+                            sizes = IMAGE_SIZES
+                            for s in sizes:
                                 try:
-                                    out_path = f"{fp}.resized-{s}"
-                                    im_copy.save(out_path)
-                                    vkey = f"{msg.chat.id}/{msg.id}-w{s}{ext}"
-                                    _upload_to_r2(out_path, vkey)
+                                    im_copy = im.copy()
+                                    im_copy.thumbnail((s, s))
+                                    if ENABLE_RESIZED_ORIGINALS:
+                                        try:
+                                            out_path = f"{fp}.resized-{s}"
+                                            im_copy.save(out_path)
+                                            vkey = f"{msg.chat.id}/{msg.id}-w{s}{ext}"
+                                            _upload_to_r2(out_path, vkey)
+                                            try:
+                                                os.remove(out_path)
+                                            except Exception:
+                                                pass
+                                        except Exception:
+                                            pass
                                     try:
-                                        os.remove(out_path)
+                                        if ENABLE_WEBP:
+                                            webp_path = f"{fp}.resized-{s}.webp"
+                                            im_copy.save(webp_path, format="WEBP", quality=75)
+                                            vkey_webp = f"{msg.chat.id}/{msg.id}-w{s}.webp"
+                                            _upload_to_r2(webp_path, vkey_webp)
+                                            try:
+                                                os.remove(webp_path)
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                                    try:
+                                        if ENABLE_AVIF:
+                                            avif_path = f"{fp}.resized-{s}.avif"
+                                            im_copy.save(avif_path, format="AVIF")
+                                            vkey_avif = f"{msg.chat.id}/{msg.id}-w{s}.avif"
+                                            _upload_to_r2(avif_path, vkey_avif)
+                                            try:
+                                                os.remove(avif_path)
+                                            except Exception:
+                                                pass
                                     except Exception:
                                         pass
                                 except Exception:
                                     pass
                             try:
                                 if ENABLE_WEBP:
-                                    webp_path = f"{fp}.resized-{s}.webp"
-                                    im_copy.save(webp_path, format="WEBP", quality=75)
-                                    vkey_webp = f"{msg.chat.id}/{msg.id}-w{s}.webp"
-                                    _upload_to_r2(webp_path, vkey_webp)
+                                    webp_path = f"{fp}.webp"
+                                    im.save(webp_path, format="WEBP", quality=75)
+                                    o_webp_key = f"{msg.chat.id}/{msg.id}.webp"
+                                    _upload_to_r2(webp_path, o_webp_key)
                                     try:
                                         os.remove(webp_path)
                                     except Exception:
@@ -313,73 +430,94 @@ async def process_message(msg):
                                 pass
                             try:
                                 if ENABLE_AVIF:
-                                    avif_path = f"{fp}.resized-{s}.avif"
-                                    im_copy.save(avif_path, format="AVIF")
-                                    vkey_avif = f"{msg.chat.id}/{msg.id}-w{s}.avif"
-                                    _upload_to_r2(avif_path, vkey_avif)
+                                    avif_path = f"{fp}.avif"
+                                    im.save(avif_path, format="AVIF")
+                                    o_avif_key = f"{msg.chat.id}/{msg.id}.avif"
+                                    _upload_to_r2(avif_path, o_avif_key)
                                     try:
                                         os.remove(avif_path)
                                     except Exception:
                                         pass
                             except Exception:
                                 pass
-                        except Exception:
-                            pass
-                    try:
-                        if ENABLE_WEBP:
-                            webp_path = f"{fp}.webp"
-                            im.save(webp_path, format="WEBP", quality=75)
-                            o_webp_key = f"{msg.chat.id}/{msg.id}.webp"
-                            _upload_to_r2(webp_path, o_webp_key)
-                            try:
-                                os.remove(webp_path)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                    try:
-                        if ENABLE_AVIF:
-                            avif_path = f"{fp}.avif"
-                            im.save(avif_path, format="AVIF")
-                            o_avif_key = f"{msg.chat.id}/{msg.id}.avif"
-                            _upload_to_r2(avif_path, o_avif_key)
-                            try:
-                                os.remove(avif_path)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                except Exception:
+                    pass
         try:
             os.remove(fp)
         except Exception:
             pass
-    content = msg.caption or msg.text
-    if content:
-        try:
-            content = re.sub(r"\s*@batarikh\s*$", "", content.strip(), flags=re.IGNORECASE)
-        except Exception:
-            pass
-    created = msg.date.isoformat()
-    STATS["processed"] += 1
-    STATS["last_id"] = msg.id
-    STATS["last_time"] = created
-    if supabase:
-        try:
-            supabase.table("posts").upsert({
+        
+        content = msg.caption or msg.text
+        if content:
+            try:
+                content = re.sub(r"\s*@batarikh\s*$", "", content.strip(), flags=re.IGNORECASE)
+            except Exception:
+                pass
+        created = msg.date.isoformat()
+        STATS["processed"] += 1
+        STATS["last_id"] = msg.id
+        STATS["last_time"] = created
+        
+        # Upsert to Supabase with circuit breaker
+        if supabase and _supabase_circuit_breaker.can_proceed():
+            try:
+                supabase.table("posts").upsert({
+                    "id": msg.id,
+                    "created_at": created,
+                    "content": content,
+                    "media_type": mt,
+                    "media_url": mu,
+                    "width": w,
+                    "height": h,
+                }).execute()
+                logging.info(f"Upserted post id={msg.id} type={mt}")
+                _supabase_circuit_breaker.record_success()
+            except Exception as e:
+                logging.error(f"Failed to upsert post id={msg.id}: {e}")
+                STATS["last_error"] = str(e)
+                _supabase_circuit_breaker.record_failure()
+                # Queue message for retry if critical
+                if retry_count < _max_retries:
+                    _queue_message_for_retry(msg, str(e), retry_count)
+        elif supabase:
+            logging.warning("Supabase circuit breaker is open, skipping upsert")
+            if retry_count < _max_retries:
+                _queue_message_for_retry(msg, "Supabase circuit breaker open", retry_count)
+        
+        # Force garbage collection after processing to free memory
+        if STATS["processed"] % 10 == 0:
+            gc.collect()
+    except Exception as e:
+        logging.error(f"Error processing message id={getattr(msg, 'id', '?')}: {e}", exc_info=True)
+        STATS["failed"] += 1
+        STATS["last_error"] = str(e)
+        if retry_count < _max_retries:
+            _queue_message_for_retry(msg, str(e), retry_count)
+        else:
+            logging.error(f"Message id={getattr(msg, 'id', '?')} exceeded max retries, giving up")
+
+def _queue_message_for_retry(msg: Message, error: str, current_retry: int):
+    """Queue a message for retry processing."""
+    try:
+        queued = QueuedMessage(
+            message_id=msg.id,
+            chat_id=msg.chat.id,
+            timestamp=time.time(),
+            retry_count=current_retry + 1,
+            last_error=error,
+            message_data={
                 "id": msg.id,
-                "created_at": created,
-                "content": content,
-                "media_type": mt,
-                "media_url": mu,
-                "width": w,
-                "height": h,
-            }).execute()
-            logging.info(f"Upserted post id={msg.id} type={mt}")
-        except Exception as e:
-            logging.error(f"Failed to upsert post id={msg.id}: {e}")
-            STATS["last_error"] = str(e)
+                "chat_id": msg.chat.id,
+                "date": msg.date.isoformat() if hasattr(msg, 'date') else None,
+                "caption": msg.caption,
+                "text": msg.text,
+            }
+        )
+        _message_queue.append(queued)
+        STATS["retried"] += 1
+        logging.info(f"Queued message id={msg.id} for retry (attempt {queued.retry_count}/{_max_retries})")
+    except Exception as e:
+        logging.error(f"Failed to queue message for retry: {e}")
 
 # Normalize channel identifier - add @ if not present and not a numeric ID
 def normalize_channel(channel: str) -> str:
@@ -427,10 +565,54 @@ async def handle_message(client, message):
         if hasattr(message.chat, 'username'):
             chat_info += f" username=@{message.chat.username}"
         logging.info(f"Received message id={message.id} from {chat_info}")
-        await process_message(message)
+        await process_message(message, retry_count=0)
         logging.info(f"Successfully processed message id={message.id}")
     except Exception as e:
         logging.error(f"Error processing message id={getattr(message, 'id', '?')}: {e}", exc_info=True)
+        STATS["failed"] += 1
+
+async def process_retry_queue():
+    """Process messages in the retry queue."""
+    while not _shutdown_event.is_set():
+        try:
+            if not _message_queue:
+                await asyncio.sleep(30)  # Check every 30 seconds
+                continue
+            
+            # Process oldest message
+            queued = _message_queue.popleft()
+            
+            # Check if enough time has passed since last retry
+            delay = _retry_delay_base * (2 ** queued.retry_count)
+            if time.time() - queued.timestamp < delay:
+                # Put it back at the end
+                _message_queue.append(queued)
+                await asyncio.sleep(10)
+                continue
+            
+            logging.info(f"Retrying message id={queued.message_id} (attempt {queued.retry_count}/{_max_retries})")
+            
+            try:
+                # Fetch message from Telegram
+                msg = await app.get_messages(queued.chat_id, queued.message_id)
+                if msg:
+                    await process_message(msg, retry_count=queued.retry_count)
+                else:
+                    logging.warning(f"Could not fetch message id={queued.message_id} for retry")
+            except Exception as e:
+                logging.error(f"Retry failed for message id={queued.message_id}: {e}")
+                if queued.retry_count < _max_retries:
+                    queued.timestamp = time.time()
+                    queued.last_error = str(e)
+                    queued.retry_count += 1
+                    _message_queue.append(queued)
+                else:
+                    logging.error(f"Message id={queued.message_id} exceeded max retries, giving up")
+            
+            await asyncio.sleep(1)  # Small delay between retries
+        except Exception as e:
+            logging.error(f"Error in retry queue processor: {e}", exc_info=True)
+            await asyncio.sleep(10)
 
 async def backfill() -> None:
     """Backfill historical messages from the channel."""
@@ -454,29 +636,67 @@ async def backfill() -> None:
         logging.error(f"Backfill failed: {e}")
         raise
 
-async def main() -> None:
-    """Main async entry point."""
-    start_status_server()
-    try:
+async def reconnect_client(max_retries=10, base_delay=5):
+    """Reconnect Telegram client with exponential backoff."""
+    retry_count = 0
+    while retry_count < max_retries and not _shutdown_event.is_set():
         try:
+            if app.is_connected:
+                await app.stop()
             await app.start()
+            STATS["connected"] = True
+            STATS["reconnect_count"] += 1
+            logging.info("Successfully reconnected to Telegram")
+            return True
         except AuthKeyDuplicated as e:
             logging.error("=" * 80)
             logging.error("CRITICAL ERROR: AUTH_KEY_DUPLICATED")
             logging.error("=" * 80)
             logging.error("The same SESSION_STRING is being used in multiple places simultaneously.")
-            logging.error("This can happen if:")
-            logging.error("  1. The worker is running locally AND on Railway at the same time")
-            logging.error("  2. Multiple Railway deployments are using the same session")
-            logging.error("  3. Another application is using the same session string")
-            logging.error("")
             logging.error("SOLUTION:")
-            logging.error("  - Stop ALL other instances using this session (local, other deployments)")
+            logging.error("  - Stop ALL other instances using this session")
             logging.error("  - OR generate a NEW session string specifically for Railway")
-            logging.error("  - Update SESSION_STRING environment variable in Railway")
             logging.error("=" * 80)
             raise
-        STATS["connected"] = True
+        except Exception as e:
+            retry_count += 1
+            delay = min(base_delay * (2 ** retry_count), 300)  # Max 5 minutes
+            logging.error(f"Reconnection attempt {retry_count}/{max_retries} failed: {e}")
+            logging.info(f"Retrying in {delay} seconds...")
+            await asyncio.sleep(delay)
+    return False
+
+async def connection_monitor():
+    """Monitor connection and automatically reconnect if needed."""
+    while not _shutdown_event.is_set():
+        try:
+            await asyncio.sleep(30)  # Check every 30 seconds
+            if not app.is_connected:
+                logging.warning("Connection lost, attempting to reconnect...")
+                STATS["connected"] = False
+                await reconnect_client()
+        except Exception as e:
+            logging.error(f"Error in connection monitor: {e}", exc_info=True)
+            await asyncio.sleep(60)
+
+async def main() -> None:
+    """Main async entry point with automatic reconnection."""
+    start_status_server()
+    
+    # Setup signal handlers for graceful shutdown
+    def signal_handler(signum, frame):
+        logging.info(f"Received signal {signum}, initiating graceful shutdown...")
+        _shutdown_event.set()
+    
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    try:
+        # Initial connection with retry
+        if not await reconnect_client():
+            logging.error("Failed to establish initial connection")
+            return
+        
         logging.info("Telegram client started")
         
         # Verify channel access
@@ -494,14 +714,14 @@ async def main() -> None:
                 logging.error(f"Failed to access channel {NORMALIZED_CHANNEL}: {e}")
                 logging.error("Make sure the account is a member of the channel and has proper permissions")
         
-        # Start heartbeat task
+        # Start background tasks
         async def heartbeat() -> None:
             try:
                 interval = int(os.getenv("HEARTBEAT_SECS", "60"))
             except (ValueError, TypeError):
                 interval = 60
-            while STATS["connected"]:
-                logging.info(f"Heartbeat connected={STATS['connected']} processed={STATS['processed']} last_id={STATS['last_id']}")
+            while STATS["connected"] and not _shutdown_event.is_set():
+                logging.info(f"Heartbeat connected={STATS['connected']} processed={STATS['processed']} failed={STATS['failed']} queue={len(_message_queue)} last_id={STATS['last_id']}")
                 await asyncio.sleep(interval)
         
         # Run backfill if enabled
@@ -511,37 +731,76 @@ async def main() -> None:
             except Exception as e:
                 logging.error(f"Backfill task failed: {e}")
         
-        # Start heartbeat
+        # Start background tasks
         heartbeat_task = asyncio.create_task(heartbeat())
+        connection_monitor_task = asyncio.create_task(connection_monitor())
+        retry_queue_task = asyncio.create_task(process_retry_queue())
         
-        # Keep running
-        await idle()
-        
-        # Cancel heartbeat
-        heartbeat_task.cancel()
+        # Keep running until shutdown
         try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
-    except KeyboardInterrupt:
-        logging.info("Received interrupt signal")
+            while not _shutdown_event.is_set():
+                if not app.is_connected:
+                    logging.warning("Client disconnected, waiting for reconnection...")
+                    await asyncio.sleep(5)
+                else:
+                    await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            logging.info("Received interrupt signal")
+            _shutdown_event.set()
+        
+        # Cancel background tasks
+        heartbeat_task.cancel()
+        connection_monitor_task.cancel()
+        retry_queue_task.cancel()
+        
+        # Wait for tasks to finish
+        for task in [heartbeat_task, connection_monitor_task, retry_queue_task]:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        
     except Exception as e:
         logging.error(f"Worker error: {e}", exc_info=True)
-        raise
+        if not _shutdown_event.is_set():
+            # Try to reconnect instead of crashing
+            logging.info("Attempting to recover from error...")
+            await asyncio.sleep(10)
+            await reconnect_client()
     finally:
         STATS["connected"] = False
+        _shutdown_event.set()
         try:
-            await app.stop()
-            logging.info("Telegram client stopped")
+            if app.is_connected:
+                await app.stop()
+                logging.info("Telegram client stopped")
         except Exception as e:
             logging.error(f"Error stopping client: {e}")
 
 if __name__ == "__main__":
     logging.info("Starting Telegram worker...")
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logging.info("Worker stopped by user")
-    except Exception as e:
-        logging.error(f"Worker crashed: {e}", exc_info=True)
-        raise
+    max_restarts = int(os.getenv("MAX_RESTARTS", "10"))
+    restart_count = 0
+    
+    while restart_count < max_restarts:
+        try:
+            asyncio.run(main())
+            # If main() returns normally, break the loop
+            break
+        except KeyboardInterrupt:
+            logging.info("Worker stopped by user")
+            break
+        except AuthKeyDuplicated:
+            # Don't retry on auth errors
+            logging.error("Auth key duplicated, exiting")
+            sys.exit(1)
+        except Exception as e:
+            restart_count += 1
+            logging.error(f"Worker crashed (restart {restart_count}/{max_restarts}): {e}", exc_info=True)
+            if restart_count < max_restarts:
+                wait_time = min(30 * restart_count, 300)  # Max 5 minutes
+                logging.info(f"Restarting in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                logging.error("Max restarts reached, exiting")
+                sys.exit(1)
