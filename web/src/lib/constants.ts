@@ -9,7 +9,7 @@ export const MAX_PAGINATION_PAGES = 10 // Used in sitemap generation
 // Default values
 export const DEFAULT_SITE_URL = 'https://batarikh.xyz'
 export const DEFAULT_TELEGRAM_CHANNEL = 'batarikh'
-export const DEFAULT_MEDIA_HOST = 'media.batarikh.xyz'
+export const DEFAULT_MEDIA_HOST = 'batarikhmedia.stream'
 
 // Media types
 export const MEDIA_TYPES = ['image', 'video', 'audio', 'document', 'none'] as const

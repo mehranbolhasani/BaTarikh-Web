@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: process.env.NEXT_PUBLIC_MEDIA_HOST || 'media.batarikh.xyz',
+        hostname: process.env.NEXT_PUBLIC_MEDIA_HOST || 'batarikhmedia.stream',
         pathname: '/**',
       },
     ],
