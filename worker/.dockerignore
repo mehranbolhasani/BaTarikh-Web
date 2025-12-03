@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv*/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+temp-log/
+
+# Git
+.git/
+.gitignore
+
+# Railway
+.railway/
+
+# Session files (should use env vars)
+*.session
+gen.session
+session_generator.session
+
+# Documentation
+*.md
+!README.md
+
+# Build files
+build.sh
+nixpacks.toml
+

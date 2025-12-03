@@ -1,18 +1,16 @@
 #!/bin/bash
 set -e
 
-echo "Checking Python dependencies..."
+echo "Starting Telegram worker..."
 
-# Check if dotenv is installed, if not, install all requirements
+# Fallback: Check if dotenv is installed (should already be installed in Docker)
 if ! python3 -c "import dotenv" 2>/dev/null; then
-    echo "Dependencies not found. Installing from requirements.txt..."
-    python3 -m pip install --upgrade pip
-    python3 -m pip install -r requirements.txt
+    echo "WARNING: Dependencies not found. Installing from requirements.txt..."
+    python3 -m pip install --quiet --upgrade pip
+    python3 -m pip install --quiet -r requirements.txt
     echo "Dependencies installed successfully!"
-else
-    echo "Dependencies already installed."
 fi
 
-echo "Starting worker..."
+# Start the worker
 exec python3 ingest.py
 
