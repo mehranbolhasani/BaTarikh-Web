@@ -34,3 +34,23 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# telegram session files (sensitive)
+*.session
+gen.session
+session_generator*.session
+
+# logs
+temp-log/
+*.log
