@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
         hostname: process.env.NEXT_PUBLIC_MEDIA_HOST || 'batarikhmedia.stream',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'media.batarikh.xyz', // legacy host for older media URLs
+        pathname: '/**',
+      },
     ],
   },
   compress: true,

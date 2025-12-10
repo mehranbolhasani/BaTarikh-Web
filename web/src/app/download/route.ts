@@ -30,8 +30,10 @@ export async function GET(req: NextRequest) {
     return new Response("Invalid url", { status: 400 })
   }
   if (parsed.protocol !== "https:") return new Response("Invalid protocol", { status: 400 })
-  const allowedHost = process.env.NEXT_PUBLIC_MEDIA_HOST || DEFAULT_MEDIA_HOST
-  if (parsed.hostname !== allowedHost) return new Response("Forbidden host", { status: 403 })
+  const primaryHost = process.env.NEXT_PUBLIC_MEDIA_HOST || DEFAULT_MEDIA_HOST
+  const legacyHost = 'media.batarikh.xyz' // support old media URLs
+  const allowedHosts = [primaryHost, legacyHost]
+  if (!allowedHosts.includes(parsed.hostname)) return new Response("Forbidden host", { status: 403 })
   const upstream = await fetch(url)
   if (!upstream.ok || !upstream.body) return new Response("Upstream error", { status: 502 })
   const filename = name || parsed.pathname.split("/").pop() || "file.pdf"
